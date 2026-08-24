@@ -20,23 +20,40 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
 };
 
 export type DocumentStatus =
-  | "uploaded" // загружен, анализ ещё не запускался
+  | "uploaded" // загружен, анализ ещё не запускался ("Не анализирован")
   | "analyzing" // AI-анализ выполняется
-  | "analyzed" // AI вернул результат, ожидает подтверждения консультанта
+  | "analyzed" // AI вернул результат, ожидает подтверждения консультанта ("Требует проверки")
   | "confirmed" // консультант подтвердил извлечённые данные
-  | "rejected"; // консультант отклонил / отменил результат анализа
+  | "rejected" // консультант отклонил / отменил результат анализа
+  | "error"; // Gemini не смог проанализировать документ (см. п.14 ТЗ ЭТАПА 2)
 
 export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
-  uploaded: "Загружен",
+  uploaded: "Не анализирован",
   analyzing: "Анализируется",
-  analyzed: "Требует подтверждения",
+  analyzed: "Требует проверки",
   confirmed: "Подтверждён",
   rejected: "Отклонён",
+  error: "Ошибка анализа",
 };
+
+// Одна строка из кредитной истории (см. lib/ai/prompts.ts — credit_history).
+export interface CreditLineItem {
+  creditor: string | null;
+  type: string | null;
+  remainingBalance: number | null;
+  monthlyPayment: number | null;
+  status: string | null;
+  overdue: boolean | null;
+}
 
 // Универсальный контейнер извлечённых полей.
 // Конкретный набор ключей зависит от document_type (см. lib/ai/prompts.ts).
-export type ExtractedFields = Record<string, string | number | null>;
+// Значение null означает "AI не нашёл это поле в документе" — это осознанный
+// результат анализа, а не ошибка, и не должно заменяться выдуманными данными.
+export type ExtractedFields = Record<
+  string,
+  string | number | boolean | null | CreditLineItem[]
+>;
 
 export interface DocumentWarning {
   id: string;
@@ -58,9 +75,13 @@ export interface ClientDocument {
 
   type: DocumentType;
   fileName: string;
+  fileSizeBytes?: number;
   uploadedAt: string; // ISO datetime
 
   status: DocumentStatus;
+
+  // Заполняется, если Gemini не смог проанализировать документ (см. п.14 ТЗ).
+  lastError?: string;
 
   // Заполняется после AI-анализа
   analysisResult?: DocumentAnalysisResult;

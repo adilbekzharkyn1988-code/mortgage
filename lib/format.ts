@@ -16,6 +16,19 @@ export function formatDate(iso: string | undefined | null): string {
   }
 }
 
+// ЭТАП 4: короткая дата (день + месяц, без года) для компактных карточек задач.
+export function formatDateShort(iso: string | undefined | null): string {
+  if (!iso) return "—";
+  try {
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return "—";
+  }
+}
+
 export function formatDateTime(iso: string | undefined | null): string {
   if (!iso) return "—";
   try {
@@ -42,6 +55,13 @@ export function calculateAge(birthDateIso: string | undefined | null): number | 
     age -= 1;
   }
   return age;
+}
+
+export function formatFileSize(bytes: number | undefined | null): string {
+  if (bytes === undefined || bytes === null || Number.isNaN(bytes)) return "—";
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
 export function getInitials(fullName: string): string {

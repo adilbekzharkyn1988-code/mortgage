@@ -37,6 +37,7 @@ export const documentService = {
     caseId: string;
     type: DocumentType;
     fileName: string;
+    fileSizeBytes?: number;
   }): Promise<ClientDocument> {
     const now = new Date().toISOString();
     const document: ClientDocument = {
@@ -45,6 +46,7 @@ export const documentService = {
       caseId: params.caseId,
       type: params.type,
       fileName: params.fileName,
+      fileSizeBytes: params.fileSizeBytes,
       uploadedAt: now,
       status: "uploaded",
     };
@@ -54,14 +56,23 @@ export const documentService = {
   },
 
   async setAnalyzing(id: string): Promise<ClientDocument | null> {
-    return adapter.update(id, { status: "analyzing" });
+    return adapter.update(id, { status: "analyzing", lastError: undefined });
   },
 
   async setAnalysisResult(
     id: string,
     result: DocumentAnalysisResult
   ): Promise<ClientDocument | null> {
-    return adapter.update(id, { status: "analyzed", analysisResult: result });
+    return adapter.update(id, {
+      status: "analyzed",
+      analysisResult: result,
+      lastError: undefined,
+    });
+  },
+
+  /** Gemini не смог проанализировать документ — документ не удаляется (п.14 ТЗ). */
+  async setError(id: string, message: string): Promise<ClientDocument | null> {
+    return adapter.update(id, { status: "error", lastError: message });
   },
 
   async confirm(id: string, confirmedFields: ExtractedFields): Promise<ClientDocument | null> {

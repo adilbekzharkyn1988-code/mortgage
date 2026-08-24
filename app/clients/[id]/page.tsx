@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Phone, MapPin, AlertTriangle, FileText, ListChecks } from "lucide-react";
 import { clientService } from "@/lib/services/clientService";
@@ -9,11 +9,17 @@ import { taskService } from "@/lib/services/taskService";
 import { Client, MARITAL_STATUS_LABELS } from "@/types/client";
 import { MortgageCase } from "@/types/mortgageCase";
 import { Task } from "@/types/task";
+import { ClientDocument } from "@/types/document";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DetailField } from "@/components/ui/DetailField";
 import { Badge } from "@/components/ui/Badge";
 import { CaseStageStepper } from "@/components/CaseStageStepper";
 import { NextActionBanner } from "@/components/NextActionBanner";
+import { DocumentsSection } from "@/components/documents/DocumentsSection";
+import { DossierPanel } from "@/components/documents/DossierPanel";
+import { NextActionBlock } from "@/components/tasks/NextActionBlock";
+import { ActionPlanPanel } from "@/components/tasks/ActionPlanPanel";
+import { calculateDossierProgress } from "@/lib/progress";
 import { formatDate, formatTenge, calculateAge, getInitials } from "@/lib/format";
 
 export default function ClientDetailPage({
@@ -26,6 +32,7 @@ export default function ClientDetailPage({
   const [client, setClient] = useState<Client | null | undefined>(undefined);
   const [mortgageCase, setMortgageCase] = useState<MortgageCase | null>(null);
   const [nextActionTask, setNextActionTask] = useState<Task | null>(null);
+  const [documents, setDocuments] = useState<ClientDocument[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +59,48 @@ export default function ClientDetailPage({
       cancelled = true;
     };
   }, [id]);
+
+  const handleDocumentsChange = useCallback(
+    async (docs: ClientDocument[]) => {
+      setDocuments(docs);
+      if (!client || !mortgageCase) return;
+
+      // Документы могли добавить новые несоответствия (см. lib/matching.ts) —
+      // подтягиваем актуальное дело, а не только пересчитываем прогресс.
+      const freshCase = await caseService.getById(mortgageCase.id);
+      if (!freshCase) return;
+
+      const progress = calculateDossierProgress(client, docs);
+      if (progress.overall !== freshCase.progressPercent) {
+        const updated = await caseService.update(freshCase.id, {
+          progressPercent: progress.overall,
+        });
+        setMortgageCase(updated ?? freshCase);
+      } else {
+        setMortgageCase(freshCase);
+      }
+    },
+    [client, mortgageCase]
+  );
+
+  // ЭТАП 4: план действий/задачи меняются внутри дочерних панелей — после
+  // любого изменения задачи подтягиваем актуальное "следующее действие" для
+  // существующего NextActionBanner (закреплённая задача дела).
+  const [taskRefreshKey, setTaskRefreshKey] = useState(0);
+  const handleTaskChange = useCallback(async () => {
+    setTaskRefreshKey((k) => k + 1);
+    if (!mortgageCase) return;
+    const freshCase = await caseService.getById(mortgageCase.id);
+    if (freshCase) {
+      setMortgageCase(freshCase);
+      if (freshCase.nextActionTaskId) {
+        const task = await taskService.getById(freshCase.nextActionTaskId);
+        setNextActionTask(task);
+      } else {
+        setNextActionTask(null);
+      }
+    }
+  }, [mortgageCase]);
 
   if (client === undefined) {
     return <p className="text-sm text-ink-soft">Загрузка…</p>;
@@ -239,10 +288,35 @@ export default function ClientDetailPage({
         </div>
       </Card>
 
-      <p className="text-xs text-ink-faint">
-        Клиент создан {formatDate(client.createdAt)}. Загрузка документов и AI-анализ досье
-        будут доступны на следующем этапе разработки.
-      </p>
+      {/* Документы + AI-анализ */}
+      {mortgageCase && (
+        <DocumentsSection
+          client={client}
+          caseId={mortgageCase.id}
+          onDocumentsChange={handleDocumentsChange}
+        />
+      )}
+
+      {/* Досье клиента: сводные подтверждённые данные + прогресс по категориям + AI-анализ */}
+      {mortgageCase && (
+        <DossierPanel
+          client={client}
+          documents={documents}
+          caseId={mortgageCase.id}
+          onTaskCreated={handleTaskChange}
+        />
+      )}
+
+      {/* ЭТАП 4: план действий — умный расчёт следующего действия по задачам
+          и полный список задач с фильтрами, статусами и приоритетами. */}
+      {mortgageCase && (
+        <div key={taskRefreshKey} className="flex flex-col gap-6">
+          <NextActionBlock caseId={mortgageCase.id} />
+          <ActionPlanPanel caseId={mortgageCase.id} onTaskUpdate={handleTaskChange} />
+        </div>
+      )}
+
+      <p className="text-xs text-ink-faint">Клиент создан {formatDate(client.createdAt)}.</p>
     </div>
   );
 }
