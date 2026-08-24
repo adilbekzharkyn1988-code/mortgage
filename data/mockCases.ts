@@ -1,0 +1,53 @@
+import { MortgageCase } from "@/types/mortgageCase";
+
+export const mockCases: MortgageCase[] = [
+  {
+    id: "case-1",
+    clientId: "client-1",
+    stage: "dossier_analysis",
+    progressPercent: 65,
+    documentIds: ["doc-1-1", "doc-1-2"],
+    taskIds: ["task-1-1", "task-1-2"],
+    discrepancies: [
+      {
+        id: "disc-1-1",
+        field: "Доход",
+        sourceA: "Консультация",
+        valueA: "700 000 ₸",
+        sourceB: "Справка о доходах",
+        valueB: "650 000 ₸",
+        detectedAt: "2026-08-18T14:35:00.000Z",
+      },
+    ],
+    analyses: [],
+    nextActionTaskId: "task-1-1",
+    createdAt: "2026-08-10T09:15:00.000Z",
+    updatedAt: "2026-08-18T14:40:00.000Z",
+  },
+  {
+    id: "case-2",
+    clientId: "client-2",
+    stage: "document_collection",
+    progressPercent: 35,
+    documentIds: ["doc-2-1"],
+    taskIds: ["task-2-1"],
+    discrepancies: [],
+    analyses: [],
+    nextActionTaskId: "task-2-1",
+    createdAt: "2026-08-15T11:00:00.000Z",
+    updatedAt: "2026-08-20T10:05:00.000Z",
+  },
+  {
+    id: "case-3",
+    clientId: "client-3",
+    stage: "consultation",
+    progressPercent: 10,
+    documentIds: [],
+    taskIds: [],
+    discrepancies: [],
+    analyses: [],
+    nextActionTaskId: undefined,
+    createdAt: "2026-08-19T08:30:00.000Z",
+    updatedAt: "2026-08-19T08:30:00.000Z",
+  },
+];
