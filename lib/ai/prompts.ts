@@ -89,6 +89,39 @@ ${JSON_ONLY_REMINDER}`,
     `Проанализируй документ "${fileName}" как справку о доходах и верни JSON по описанной схеме.`,
 };
 
+const PENSION_CONTRIBUTIONS_PROMPT: DocumentPrompt = {
+  system: `${SAFETY_RULES}
+
+Ты анализируешь ВЫПИСКУ О ПЕНСИОННЫХ ОТЧИСЛЕНИЯХ (ЕНПФ/ОПВ — обязательные
+пенсионные взносы, обычно 10% от официальной зарплаты сотрудника). Извлеки
+следующие поля в объект "fields":
+- fullName (string | null) — ФИО вкладчика
+- lastContributionAmount (number | null) — сумма ПОСЛЕДНЕГО (самого
+  недавнего по дате) отдельного отчисления в выписке (число, без валютного
+  символа). Если в выписке несколько отчислений за разные месяцы — бери
+  сумму за последний месяц, а не сумму/среднее за весь период.
+- lastContributionPeriod (string | null) — месяц/период, за который сделано
+  это последнее отчисление, текстом как указано в документе (например "Июль 2026")
+- employer (string | null) — наименование работодателя-вкладчика, если указано
+- contributionsCount (number | null) — количество отдельных отчислений
+  (строк/периодов), которые ты видишь в выписке
+
+Важно: НЕ вычисляй зарплату сам и не добавляй её в fields — расчёт
+"зарплата = отчисление × 10" делает сама программа, а не ты. Твоя задача —
+только точно извлечь сумму последнего отчисления.
+
+Верни JSON строго такой формы:
+{
+  "documentType": "pension_contributions",
+  "fields": { "fullName": ..., "lastContributionAmount": ..., "lastContributionPeriod": ..., "employer": ..., "contributionsCount": ... },
+  "warnings": [ "строка с осторожной формулировкой", ... ]
+}
+
+${JSON_ONLY_REMINDER}`,
+  buildUserPrompt: (fileName) =>
+    `Проанализируй документ "${fileName}" как выписку о пенсионных отчислениях (ЕНПФ) и верни JSON по описанной схеме.`,
+};
+
 const CREDIT_HISTORY_PROMPT: DocumentPrompt = {
   system: `${SAFETY_RULES}
 
@@ -156,6 +189,7 @@ ${JSON_ONLY_REMINDER}`,
 const PROMPTS_BY_TYPE: Partial<Record<DocumentType, DocumentPrompt>> = {
   identity: IDENTITY_PROMPT,
   income_certificate: INCOME_CERTIFICATE_PROMPT,
+  pension_contributions: PENSION_CONTRIBUTIONS_PROMPT,
   credit_history: CREDIT_HISTORY_PROMPT,
 };
 
@@ -193,6 +227,10 @@ export const CASE_ANALYSIS_SYSTEM_PROMPT = `${SAFETY_RULES}
 
 ПРАВИЛА:
 - НЕ выдумывать данные, если их нет.
+- Поле "documentValue" в discrepancies разрешено заполнять ТОЛЬКО значением,
+  которое буквально присутствует в переданном блоке "ПОДТВЕРЖДЁННЫЕ ДОКУМЕНТЫ".
+  Если по документам такого значения нет — не создавай discrepancy с этим полем,
+  а при необходимости опиши это как risk (не discrepancy).
 - НЕ делать предположений о вероятности одобрения банком.
 - НЕ использовать категоричные формулировки.
 - Использовать: "требует проверки", "возможный риск", "обнаружено расхождение", 

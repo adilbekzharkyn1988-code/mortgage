@@ -90,6 +90,26 @@ export function findDiscrepancies(
     }
   }
 
+  // Пенсионные отчисления: зарплата считается как последнее отчисление × 10
+  // (обязательные пенсионные взносы — 10% от официального дохода).
+  if (documentType === "pension_contributions") {
+    const lastContribution = asNumber(confirmedFields.lastContributionAmount);
+    if (lastContribution !== null) {
+      const computedIncome = lastContribution * 10;
+      if (Math.abs(computedIncome - client.estimatedIncome) > INCOME_TOLERANCE) {
+        discrepancies.push({
+          id: generateId("disc"),
+          field: "Доход",
+          sourceA: "Консультация",
+          valueA: formatTenge(client.estimatedIncome),
+          sourceB: "Пенсионные отчисления (×10)",
+          valueB: formatTenge(computedIncome),
+          detectedAt: now,
+        });
+      }
+    }
+  }
+
   if (documentType === "credit_history") {
     const docMonthlyPayment = asNumber(confirmedFields.totalMonthlyPayment);
     if (

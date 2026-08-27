@@ -7,13 +7,14 @@
  */
 
 import { Client } from "@/types/client";
-import { ClientDocument, ExtractedFields } from "@/types/document";
+import { ClientDocument, ExtractedFields, INCOME_PROOF_DOCUMENT_TYPES } from "@/types/document";
 import {
   MortgageCase,
   DossierAnalysis,
   Discrepancy,
   Risk,
   RiskSeverity,
+  CreditBurden,
 } from "@/types/mortgageCase";
 import { callGemini } from "./gemini";
 import { getCaseAnalysisPrompt } from "./prompts";
@@ -131,6 +132,26 @@ function normalizeRisks(raw: unknown): Risk[] {
     });
 }
 
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value.replace(/[^\d.-]/g, ""));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function normalizeCreditBurden(raw: unknown): CreditBurden | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const b = raw as Record<string, unknown>;
+  const monthlyPayments = asNumber(b.monthlyPayments);
+  const income = asNumber(b.income);
+  const ratio = asNumber(b.ratio);
+  const message = asString(b.message);
+  if (monthlyPayments === null || income === null || ratio === null || !message) return null;
+  return { monthlyPayments, income, ratio, message };
+}
+
 function normalizeRecommendations(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -177,13 +198,22 @@ function buildCaseAnalysisPrompt(caseData: CaseDataForAnalysis): string {
   }
 
   if (confirmedIncome) {
-    lines.push(`✓ Справка о доходах:`);
-    lines.push(`  - Работодатель: ${confirmedIncome.employer || "(не найдено)"}`);
-    lines.push(`  - Должность: ${confirmedIncome.position || "(не найдено)"}`);
-    lines.push(`  - Ежемесячный доход: ${confirmedIncome.monthlyIncome || "(не найдено)"} ₸`);
-    lines.push(`  - Стаж работы: ${confirmedIncome.employmentDuration || "(не указан)"}`);
+    const lastContribution = asNumber(confirmedIncome.lastContributionAmount);
+    if (lastContribution !== null) {
+      lines.push(`✓ Пенсионные отчисления (ЕНПФ):`);
+      lines.push(`  - Последнее отчисление: ${lastContribution.toLocaleString()} ₸`);
+      lines.push(`  - Расчётный доход (отчисление × 10): ${(lastContribution * 10).toLocaleString()} ₸`);
+      lines.push(`  - Период: ${confirmedIncome.lastContributionPeriod || "(не указан)"}`);
+      lines.push(`  - Работодатель: ${confirmedIncome.employer || "(не найдено)"}`);
+    } else {
+      lines.push(`✓ Справка о доходах:`);
+      lines.push(`  - Работодатель: ${confirmedIncome.employer || "(не найдено)"}`);
+      lines.push(`  - Должность: ${confirmedIncome.position || "(не найдено)"}`);
+      lines.push(`  - Ежемесячный доход: ${confirmedIncome.monthlyIncome || "(не найдено)"} ₸`);
+      lines.push(`  - Стаж работы: ${confirmedIncome.employmentDuration || "(не указан)"}`);
+    }
   } else {
-    lines.push(`✗ Справка о доходах: не подтверждена`);
+    lines.push(`✗ Подтверждение дохода (пенсионные отчисления/справка): не подтверждено`);
   }
 
   if (confirmedCredit) {
@@ -223,7 +253,20 @@ function buildCaseAnalysisPrompt(caseData: CaseDataForAnalysis): string {
       "какие риски, какие рекомендации."
   );
   lines.push(
-    "Не выдумывай данные. Если информации недостаточно — напиши 'Недостаточно данных'."
+    "Дополнительно рассчитай кредитную нагрузку (creditBurden): возьми суммарный " +
+      "ежемесячный платёж по кредитам (из подтверждённой кредитной истории, поле " +
+      "totalMonthlyPayment; если её нет — используй 'Ежемесячные платежи (консультация)') " +
+      "и суммарный доход (расчётный доход по пенсионным отчислениям, либо доход по " +
+      "справке, плюс доход супруга). Верни объект creditBurden с полями monthlyPayments, " +
+      "income, ratio (платежи/доход × 100, число) и message — короткий вывод по-русски " +
+      "(например, допустимая нагрузка обычно не должна превышать 40-50% дохода). " +
+      "Если данных недостаточно для расчёта — верни creditBurden: null."
+  );
+  lines.push(
+    "Не выдумывай данные, которых нет ни в консультации, ни в подтверждённых документах " +
+      "выше. Не приписывай значения источнику 'Документ', если это значение не встречается " +
+      "буквально в блоке ПОДТВЕРЖДЁННЫЕ ДОКУМЕНТЫ. Если информации недостаточно — напиши " +
+      "'Недостаточно данных'."
   );
 
   return lines.join("\n");
@@ -238,9 +281,9 @@ export async function analyzeMortgageCase(
 ): Promise<DossierAnalysis> {
   // Извлечение подтверждённых данных из документов
   const identity = caseData.documents.find((d) => d.type === "identity" && d.status === "confirmed");
-  const income = caseData.documents.find(
-    (d) => d.type === "income_certificate" && d.status === "confirmed"
-  );
+  const income = caseData.documents
+    .filter((d) => INCOME_PROOF_DOCUMENT_TYPES.includes(d.type) && d.status === "confirmed")
+    .sort((a, _b) => (a.type === "pension_contributions" ? -1 : 1))[0];
   const credit = caseData.documents.find((d) => d.type === "credit_history" && d.status === "confirmed");
 
   const caseDataWithConfirmed: CaseDataForAnalysis = {
@@ -267,6 +310,7 @@ export async function analyzeMortgageCase(
     missing: normalizeMissing(parsed.missing),
     discrepancies: normalizeDiscrepancies(parsed.discrepancies),
     risks: normalizeRisks(parsed.risks),
+    creditBurden: normalizeCreditBurden(parsed.creditBurden),
     recommendations: normalizeRecommendations(parsed.recommendations),
   };
 }

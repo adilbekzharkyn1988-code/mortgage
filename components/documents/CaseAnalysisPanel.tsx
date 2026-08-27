@@ -13,7 +13,7 @@ import {
 import { DossierAnalysis, RISK_SEVERITY_LABELS } from "@/types/mortgageCase";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatTenge } from "@/lib/format";
 import { AddToTaskPlanButton } from "@/components/tasks/AddToTaskPlanButton";
 
 interface CaseAnalysisPanelProps {
@@ -242,6 +242,44 @@ export function CaseAnalysisPanel({ analysis, caseId, onTaskCreated }: CaseAnaly
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* КРЕДИТНАЯ НАГРУЗКА */}
+        {analysis.creditBurden && (
+          <div className="rounded-lg border border-line px-4 py-3.5">
+            <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-ink-faint">
+              Кредитная нагрузка
+            </p>
+            <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-ink-faint">Платежи/мес</p>
+                <p className="font-data text-sm font-medium text-ink">
+                  {formatTenge(analysis.creditBurden.monthlyPayments)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-ink-faint">Доход/мес</p>
+                <p className="font-data text-sm font-medium text-ink">
+                  {formatTenge(analysis.creditBurden.income)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-ink-faint">Соотношение</p>
+                <p
+                  className={`font-data text-sm font-medium ${
+                    analysis.creditBurden.ratio >= 50
+                      ? "text-risk"
+                      : analysis.creditBurden.ratio >= 35
+                        ? "text-warning"
+                        : "text-success"
+                  }`}
+                >
+                  {Math.round(analysis.creditBurden.ratio)}%
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-ink-soft">{analysis.creditBurden.message}</p>
           </div>
         )}
 

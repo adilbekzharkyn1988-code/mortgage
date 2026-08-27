@@ -14,7 +14,7 @@
  * ответа сервера результат анализа тоже сохраняется здесь же, на клиенте.
  */
 
-import { ClientDocument, DocumentAnalysisResult, ExtractedFields } from "@/types/document";
+import { ClientDocument, DocumentAnalysisResult, DocumentType, ExtractedFields, INCOME_PROOF_DOCUMENT_TYPES } from "@/types/document";
 import { DossierAnalysis } from "@/types/mortgageCase";
 import { caseService } from "./caseService";
 import { clientService } from "./clientService";
@@ -22,9 +22,16 @@ import { documentService } from "./documentService";
 
 function getConfirmedFields(
   documents: ClientDocument[],
-  type: ClientDocument["type"]
+  type: DocumentType
 ): ExtractedFields | null {
   const doc = documents.find((d) => d.type === type && d.status === "confirmed");
+  return doc?.confirmedFields ?? null;
+}
+
+function getConfirmedIncomeFields(documents: ClientDocument[]): ExtractedFields | null {
+  const doc = documents
+    .filter((d) => INCOME_PROOF_DOCUMENT_TYPES.includes(d.type) && d.status === "confirmed")
+    .sort((a, _b) => (a.type === "pension_contributions" ? -1 : 1))[0];
   return doc?.confirmedFields ?? null;
 }
 
@@ -119,7 +126,7 @@ export const aiService = {
           mortgageCase,
           documents,
           confirmedIdentity: getConfirmedFields(documents, "identity"),
-          confirmedIncome: getConfirmedFields(documents, "income_certificate"),
+          confirmedIncome: getConfirmedIncomeFields(documents),
           confirmedCredit: getConfirmedFields(documents, "credit_history"),
           existingDiscrepancies: mortgageCase.discrepancies,
         }),

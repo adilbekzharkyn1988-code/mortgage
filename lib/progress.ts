@@ -6,7 +6,7 @@
  */
 
 import { Client } from "@/types/client";
-import { ClientDocument, DocumentType } from "@/types/document";
+import { ClientDocument, DocumentType, INCOME_PROOF_DOCUMENT_TYPES } from "@/types/document";
 
 export type ProgressCategory =
   | "personal"
@@ -30,18 +30,27 @@ export interface DossierProgress {
   requiredDocumentTypes: DocumentType[];
 }
 
+const STATUS_RANK: Record<ClientDocument["status"], number> = {
+  error: 0,
+  uploaded: 1,
+  analyzing: 1,
+  analyzed: 2,
+  rejected: 1,
+  confirmed: 3,
+};
+
 function docOfType(documents: ClientDocument[], type: DocumentType): ClientDocument | undefined {
   // Если документов одного типа несколько — берём наиболее "продвинутый" по статусу.
   const candidates = documents.filter((d) => d.type === type);
-  const rank: Record<ClientDocument["status"], number> = {
-    error: 0,
-    uploaded: 1,
-    analyzing: 1,
-    analyzed: 2,
-    rejected: 1,
-    confirmed: 3,
-  };
-  return candidates.sort((a, b) => rank[b.status] - rank[a.status])[0];
+  return candidates.sort((a, b) => STATUS_RANK[b.status] - STATUS_RANK[a.status])[0];
+}
+
+// Доход можно подтвердить и справкой, и пенсионными отчислениями (см.
+// INCOME_PROOF_DOCUMENT_TYPES) — берём наиболее "продвинутый" документ из
+// обоих вариантов.
+function docOfAnyType(documents: ClientDocument[], types: DocumentType[]): ClientDocument | undefined {
+  const candidates = documents.filter((d) => types.includes(d.type));
+  return candidates.sort((a, b) => STATUS_RANK[b.status] - STATUS_RANK[a.status])[0];
 }
 
 function scoreForDocument(doc: ClientDocument | undefined): number {
@@ -65,7 +74,7 @@ export function calculateDossierProgress(
   documents: ClientDocument[]
 ): DossierProgress {
   const identityDoc = docOfType(documents, "identity");
-  const incomeDoc = docOfType(documents, "income_certificate");
+  const incomeDoc = docOfAnyType(documents, INCOME_PROOF_DOCUMENT_TYPES);
   const creditDoc = docOfType(documents, "credit_history");
   const spouseDoc = docOfType(documents, "spouse_documents");
 
@@ -91,15 +100,19 @@ export function calculateDossierProgress(
     : 100;
 
   // Документы: доля обязательных документов, доведённых до статуса "Подтверждён".
+  // Доход считается закрытым любым из INCOME_PROOF_DOCUMENT_TYPES — поэтому
+  // в списке фигурирует один "виртуальный" пункт "income", а не оба типа.
   const requiredDocumentTypes: DocumentType[] = [
     "identity",
-    "income_certificate",
+    "pension_contributions",
     "credit_history",
     ...(isMarried ? (["spouse_documents"] as DocumentType[]) : []),
   ];
-  const confirmedRequiredCount = requiredDocumentTypes.filter(
-    (type) => docOfType(documents, type)?.status === "confirmed"
-  ).length;
+  const isTypeConfirmed = (type: DocumentType) =>
+    type === "pension_contributions"
+      ? incomeDoc?.status === "confirmed"
+      : docOfType(documents, type)?.status === "confirmed";
+  const confirmedRequiredCount = requiredDocumentTypes.filter(isTypeConfirmed).length;
   const documentsScore = clampRound(
     (confirmedRequiredCount / requiredDocumentTypes.length) * 100
   );
@@ -121,9 +134,7 @@ export function calculateDossierProgress(
       5
   );
 
-  const missingRequiredTypes = requiredDocumentTypes.filter(
-    (type) => docOfType(documents, type)?.status !== "confirmed"
-  );
+  const missingRequiredTypes = requiredDocumentTypes.filter((type) => !isTypeConfirmed(type));
 
   return { categories, overall, requiredDocumentTypes: missingRequiredTypes };
 }

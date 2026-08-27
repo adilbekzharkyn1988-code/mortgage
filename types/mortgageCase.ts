@@ -56,6 +56,14 @@ export interface Risk {
   relatedField?: string;
 }
 
+// Соотношение ежемесячных платежей по кредитам к доходу — "кредитная нагрузка".
+export interface CreditBurden {
+  monthlyPayments: number;
+  income: number;
+  ratio: number; // проценты, 0-100+
+  message: string;
+}
+
 // Результат AI-анализа всего досье целиком.
 export interface DossierAnalysis {
   id: string;
@@ -64,6 +72,7 @@ export interface DossierAnalysis {
   missing: string[]; // "Чего не хватает"
   discrepancies: Discrepancy[]; // "Несоответствия"
   risks: Risk[]; // "Потенциальные риски"
+  creditBurden: CreditBurden | null; // соотношение платежи/доход
   recommendations: string[]; // "Рекомендованные действия" (тексты рекомендаций)
 }
 

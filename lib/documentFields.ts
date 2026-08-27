@@ -31,12 +31,18 @@ export const FIELD_LABELS: Record<string, string> = {
   credits: "Кредитные линии",
   documentSubtype: "Тип документа",
   summary: "Описание",
+  lastContributionAmount: "Последнее отчисление (ОПВ)",
+  lastContributionPeriod: "Период отчисления",
+  contributionsCount: "Количество отчислений в выписке",
+  computedIncome: "Доход (расчётный, отчисление × 10)",
 };
 
 const MONEY_FIELDS = new Set([
   "monthlyIncome",
   "totalMonthlyPayment",
   "totalOutstandingBalance",
+  "lastContributionAmount",
+  "computedIncome",
 ]);
 
 export function fieldLabel(key: string): string {
@@ -86,6 +92,13 @@ export const BLANK_FIELDS_BY_TYPE: Record<string, ExtractedFields> = {
     employmentStart: null,
     employmentDuration: null,
     documentDate: null,
+  },
+  pension_contributions: {
+    fullName: null,
+    lastContributionAmount: null,
+    lastContributionPeriod: null,
+    employer: null,
+    contributionsCount: null,
   },
   credit_history: {
     fullName: null,

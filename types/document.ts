@@ -9,6 +9,14 @@ export type DocumentType =
   | "bank_statement" // банковская выписка
   | "other"; // другой документ
 
+// Документы, которыми можно подтвердить доход клиента. Справка о доходах —
+// исторический вариант, пенсионные отчисления (ОПВ × 10) — основной способ
+// в новом сценарии создания клиента (см. app/clients/new/page.tsx).
+export const INCOME_PROOF_DOCUMENT_TYPES: DocumentType[] = [
+  "pension_contributions",
+  "income_certificate",
+];
+
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   identity: "Удостоверение личности",
   income_certificate: "Справка о доходах",
