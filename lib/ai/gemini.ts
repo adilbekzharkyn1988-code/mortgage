@@ -24,7 +24,7 @@ export interface GeminiCompletionParams {
   file?: GeminiFilePart;
 }
 
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-3.6-flash";
 
 function getModel(): string {
   return process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
