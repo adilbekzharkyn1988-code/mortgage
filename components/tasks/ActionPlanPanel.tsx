@@ -13,13 +13,28 @@ import {
 } from "@/types/task";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { FieldWrapper, SelectInput, TextArea, TextInput } from "@/components/ui/FormField";
 import { taskService } from "@/lib/services/taskService";
+import { caseService } from "@/lib/services/caseService";
 import { formatDateShort } from "@/lib/format";
 
 interface ActionPlanPanelProps {
   caseId: string;
+  /** Необязательный колбэк — дополнительно к самостоятельному созданию задачи ниже. */
   onTaskCreate?: () => void;
   onTaskUpdate?: (task: Task) => void;
+}
+
+interface ManualTaskForm {
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  dueDate: string;
+}
+
+function emptyManualTaskForm(): ManualTaskForm {
+  return { title: "", description: "", priority: "medium", dueDate: "" };
 }
 
 type ViewMode = "all" | "new" | "in_progress" | "done" | "overdue";
@@ -52,6 +67,13 @@ export function ActionPlanPanel({ caseId, onTaskCreate, onTaskUpdate }: ActionPl
   const [stats, setStats] = useState({ total: 0, done: 0, inProgress: 0, fresh: 0, overdue: 0 });
   const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [loading, setLoading] = useState(true);
+
+  // ЭТАП 6, п.6.19: ручное добавление задачи (раньше кнопка существовала,
+  // но не была подключена ни к какой форме — задачи создавались только
+  // из AI-рекомендаций).
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addForm, setAddForm] = useState<ManualTaskForm>(emptyManualTaskForm());
+  const [addError, setAddError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -91,6 +113,33 @@ export function ActionPlanPanel({ caseId, onTaskCreate, onTaskUpdate }: ActionPl
       onTaskUpdate?.(updated);
       await load();
     }
+  };
+
+  const handleAddSubmit = async () => {
+    if (!addForm.title.trim()) {
+      setAddError("Укажите название задачи.");
+      return;
+    }
+    const parentCase = await caseService.getById(caseId);
+    if (!parentCase) {
+      setAddError("Дело не найдено.");
+      return;
+    }
+    const created = await taskService.create({
+      caseId,
+      clientId: parentCase.clientId,
+      title: addForm.title.trim(),
+      description: addForm.description.trim(),
+      priority: addForm.priority,
+      dueDate: addForm.dueDate || undefined,
+      origin: "manual",
+    });
+    onTaskUpdate?.(created);
+    onTaskCreate?.();
+    setShowAddForm(false);
+    setAddForm(emptyManualTaskForm());
+    setAddError(null);
+    await load();
   };
 
   if (loading) {
@@ -154,14 +203,73 @@ export function ActionPlanPanel({ caseId, onTaskCreate, onTaskUpdate }: ActionPl
           )}
         </div>
 
-        {onTaskCreate && (
+        {!showAddForm && (
           <button
-            onClick={onTaskCreate}
+            onClick={() => {
+              setAddForm(emptyManualTaskForm());
+              setAddError(null);
+              setShowAddForm(true);
+            }}
             className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong bg-surface-sunken p-3 transition-colors hover:border-navy hover:bg-surface"
           >
             <Plus size={16} className="text-navy" />
             <span className="text-xs font-medium text-navy">Добавить задачу</span>
           </button>
+        )}
+
+        {showAddForm && (
+          <div className="flex flex-col gap-3 rounded-lg border border-line-strong p-4">
+            <FieldWrapper label="Название задачи" htmlFor="manual-task-title" required>
+              <TextInput
+                id="manual-task-title"
+                value={addForm.title}
+                onChange={(e) => setAddForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="Например: Получить справку о доходах"
+              />
+            </FieldWrapper>
+            <FieldWrapper label="Описание" htmlFor="manual-task-description">
+              <TextArea
+                id="manual-task-description"
+                rows={2}
+                value={addForm.description}
+                onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </FieldWrapper>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <FieldWrapper label="Приоритет" htmlFor="manual-task-priority">
+                <SelectInput
+                  id="manual-task-priority"
+                  value={addForm.priority}
+                  onChange={(e) =>
+                    setAddForm((f) => ({ ...f, priority: e.target.value as TaskPriority }))
+                  }
+                >
+                  {(["high", "medium", "low"] as TaskPriority[]).map((p) => (
+                    <option key={p} value={p}>
+                      {TASK_PRIORITY_LABELS[p]}
+                    </option>
+                  ))}
+                </SelectInput>
+              </FieldWrapper>
+              <FieldWrapper label="Срок" htmlFor="manual-task-due">
+                <TextInput
+                  id="manual-task-due"
+                  type="date"
+                  value={addForm.dueDate}
+                  onChange={(e) => setAddForm((f) => ({ ...f, dueDate: e.target.value }))}
+                />
+              </FieldWrapper>
+            </div>
+            {addError && <p className="text-xs text-risk">{addError}</p>}
+            <div className="flex gap-2">
+              <Button variant="primary" onClick={handleAddSubmit}>
+                Сохранить
+              </Button>
+              <Button variant="ghost" onClick={() => setShowAddForm(false)}>
+                Отмена
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </Card>

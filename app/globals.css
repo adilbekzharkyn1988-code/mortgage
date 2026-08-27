@@ -9,12 +9,9 @@
   AI-стартаперского вида (кремовый фон + терракота).
 
   Шрифты:
-  - Inter — универсальный, современный шрифт для всех типов текста
-    
-  Типография для UX/UI:
-  - Лёгкая, не давящая иерархия
-  - Ясная читаемость на разных размерах
-  - Правильные комбинации weight для акцентов
+  - PT Serif  — заголовки, "документный" акцент
+  - IBM Plex Sans — основной интерфейсный текст (хорошо читается на кириллице)
+  - IBM Plex Mono — денежные суммы и другие цифровые данные
 */
 
 :root {
@@ -45,12 +42,9 @@
   --color-success: #2e6b4f;
   --color-success-soft: #e4eee8;
 
-  --font-inter: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  
-  /* Типографические утилиты для правильной иерархии */
-  --font-display: var(--font-inter);        /* Заголовки: 600-700 */
-  --font-body: var(--font-inter);           /* Основной текст: 400-500 */
-  --font-data: var(--font-inter);           /* Табулярные данные: 500-600 */
+  --font-display: "PT Serif", "Georgia", serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", "SFMono-Regular", monospace;
 }
 
 @theme inline {
@@ -81,7 +75,6 @@
   --color-success: var(--color-success);
   --color-success-soft: var(--color-success-soft);
 
-  --font-inter: var(--font-inter);
   --font-display: var(--font-display);
   --font-body: var(--font-body);
   --font-data: var(--font-data);
@@ -99,51 +92,7 @@ body {
   background: var(--color-paper);
   color: var(--color-ink);
   font-family: var(--font-body);
-  font-weight: 400;
-  line-height: 1.5;
-  letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
-}
-
-/* Заголовки: лёгкая, чёткая иерархия */
-h1 {
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-h2 {
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.3;
-}
-
-h3, h4 {
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.4;
-}
-
-h5, h6 {
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-/* Вторичный текст, labels, подсказки */
-small, .text-sm {
-  font-weight: 500;
-  line-height: 1.5;
-}
-
-/* Выделенный текст */
-strong, b {
-  font-weight: 600;
-}
-
-/* Код, данные, табулярная информация */
-code, kbd, samp, pre {
-  font-family: var(--font-data);
-  font-weight: 500;
 }
 
 ::selection {

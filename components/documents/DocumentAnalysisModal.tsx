@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Pencil, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, Loader2, Pencil, RotateCcw, Wallet, X } from "lucide-react";
 import { Client } from "@/types/client";
 import {
   ClientDocument,
+  CreditLineItem,
   DOCUMENT_TYPE_LABELS,
   ExtractedFields,
 } from "@/types/document";
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { TextInput } from "@/components/ui/FormField";
 import { findDiscrepancies } from "@/lib/matching";
 import { fieldLabel, displayFieldValue } from "@/lib/documentFields";
+import { formatTenge } from "@/lib/format";
 
 export function DocumentAnalysisModal({
   document,
@@ -27,7 +29,7 @@ export function DocumentAnalysisModal({
   isRetrying: boolean;
   startInEditMode?: boolean;
   onClose: () => void;
-  onConfirm: (confirmedFields: ExtractedFields) => void;
+  onConfirm: (confirmedFields: ExtractedFields, applyCreditsToClient?: boolean) => void;
   onRetry: () => void;
 }) {
   const result = document.analysisResult;
@@ -35,11 +37,24 @@ export function DocumentAnalysisModal({
   const [editedFields, setEditedFields] = useState<ExtractedFields>(
     () => result?.fields ?? {}
   );
+  // Кредитная история: AI уже разложил кредиты по строкам (credits) — вместо
+  // того, чтобы консультант вручную вбивал каждый кредит в карточку клиента,
+  // предлагаем сразу заполнить "Текущие кредиты" этими данными.
+  const [applyCreditsToClient, setApplyCreditsToClient] = useState(true);
 
   const previewDiscrepancies = useMemo(() => {
     if (!result) return [];
     return findDiscrepancies(client, document.type, editedFields);
   }, [client, document.type, editedFields, result]);
+
+  // Список кредитных линий из документа (если это кредитная история и AI
+  // нашёл хотя бы одну строку) — показываем консультанту явно, что именно
+  // подставится в карточку клиента.
+  const creditLines: CreditLineItem[] = useMemo(() => {
+    if (document.type !== "credit_history") return [];
+    const raw = editedFields.credits;
+    return Array.isArray(raw) ? (raw as CreditLineItem[]) : [];
+  }, [document.type, editedFields]);
 
   if (!result) return null;
 
@@ -151,6 +166,49 @@ export function DocumentAnalysisModal({
               </div>
             </div>
           )}
+          {creditLines.length > 0 && (
+            <div className="mt-5">
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-faint">
+                <Wallet size={13} />
+                Обнаруженные кредиты ({creditLines.length})
+              </p>
+              <div className="flex flex-col gap-2">
+                {creditLines.map((line, idx) => (
+                  <div
+                    key={idx}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-sunken px-3.5 py-2.5 text-sm"
+                  >
+                    <span className="font-medium text-ink">
+                      {[line.creditor, line.type].filter(Boolean).join(" — ") || "Кредит"}
+                    </span>
+                    <span className="text-ink-soft">
+                      {line.monthlyPayment !== null ? formatTenge(line.monthlyPayment) : "—"}/мес
+                      {line.remainingBalance !== null &&
+                        ` · остаток ${formatTenge(line.remainingBalance)}`}
+                      {line.overdue && (
+                        <span className="ml-1.5 font-medium text-risk">просрочка</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <label className="mt-3 flex items-start gap-2.5 rounded-lg border border-navy/15 bg-navy-soft px-3.5 py-2.5 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={applyCreditsToClient}
+                  onChange={(e) => setApplyCreditsToClient(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-line-strong"
+                />
+                <span>
+                  Заполнить «Текущие кредиты» клиента этими данными вместо ручного ввода
+                  <span className="block text-xs text-ink-faint">
+                    Заменит список текущих кредитов клиента и пересчитает суммарный
+                    ежемесячный платёж.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-2 border-t border-line px-5 py-4 sm:flex-row sm:justify-end">
@@ -177,7 +235,7 @@ export function DocumentAnalysisModal({
           </Button>
           <Button
             variant="primary"
-            onClick={() => onConfirm(editedFields)}
+            onClick={() => onConfirm(editedFields, creditLines.length > 0 && applyCreditsToClient)}
             className="order-1 sm:order-3"
           >
             Подтвердить данные

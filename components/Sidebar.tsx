@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, UserPlus, FolderKanban } from "lucide-react";
+import { LayoutDashboard, Users, UserPlus, FolderKanban, ListChecks, CalendarDays } from "lucide-react";
 import { ReactNode } from "react";
 
 const NAV_ITEMS: { href: string; label: string; icon: ReactNode; match: (p: string) => boolean }[] = [
@@ -17,6 +17,18 @@ const NAV_ITEMS: { href: string; label: string; icon: ReactNode; match: (p: stri
     label: "Клиенты",
     icon: <Users size={18} strokeWidth={1.75} />,
     match: (p) => p === "/clients" || (p.startsWith("/clients/") && !p.startsWith("/clients/new")),
+  },
+  {
+    href: "/tasks",
+    label: "Задачи",
+    icon: <ListChecks size={18} strokeWidth={1.75} />,
+    match: (p) => p.startsWith("/tasks"),
+  },
+  {
+    href: "/calendar",
+    label: "Календарь",
+    icon: <CalendarDays size={18} strokeWidth={1.75} />,
+    match: (p) => p.startsWith("/calendar"),
   },
   {
     href: "/clients/new",

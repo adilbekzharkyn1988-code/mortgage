@@ -1,14 +1,13 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Save } from "lucide-react";
+import { FileText, Save } from "lucide-react";
 import { clientService } from "@/lib/services/clientService";
-import { ExistingLoan, MARITAL_STATUS_LABELS, MaritalStatus, NewClientInput } from "@/types/client";
+import { MARITAL_STATUS_LABELS, MaritalStatus, NewClientInput } from "@/types/client";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
-import { formatTenge } from "@/lib/format";
 
 type FormState = {
   fullName: string;
@@ -38,39 +37,14 @@ const INITIAL_STATE: FormState = {
   requiredLoanAmount: "",
 };
 
-function generateLoanId(): string {
-  return `loan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-}
-
 export default function NewClientPage() {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(INITIAL_STATE);
-  const [loans, setLoans] = useState<ExistingLoan[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const totalMonthlyPayments = useMemo(
-    () => loans.reduce((sum, loan) => sum + (Number.isFinite(loan.monthlyPayment) ? loan.monthlyPayment : 0), 0),
-    [loans]
-  );
-
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function addLoan() {
-    setLoans((prev) => [
-      ...prev,
-      { id: generateLoanId(), title: "", monthlyPayment: 0, remainingAmount: 0 },
-    ]);
-  }
-
-  function updateLoan(id: string, patch: Partial<ExistingLoan>) {
-    setLoans((prev) => prev.map((loan) => (loan.id === id ? { ...loan, ...patch } : loan)));
-  }
-
-  function removeLoan(id: string) {
-    setLoans((prev) => prev.filter((loan) => loan.id !== id));
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -96,8 +70,12 @@ export default function NewClientPage() {
         propertyValue: Number(form.propertyValue) || 0,
         downPayment: Number(form.downPayment) || 0,
         requiredLoanAmount: Number(form.requiredLoanAmount) || 0,
-        existingLoans: loans.filter((l) => l.title.trim().length > 0),
-        estimatedMonthlyPayments: totalMonthlyPayments,
+        // Текущие кредиты больше не вводятся вручную на этом шаге — они
+        // автоматически подтягиваются из кредитной истории (PDF) после
+        // создания клиента, см. components/documents/DocumentAnalysisModal.tsx
+        // и lib/creditHistory.ts. Здесь фиксируем пустое состояние.
+        existingLoans: [],
+        estimatedMonthlyPayments: 0,
       };
 
       const { client } = await clientService.create(input);
@@ -250,79 +228,16 @@ export default function NewClientPage() {
         </Card>
 
         <Card>
-          <CardHeader
-            eyebrow="Шаг 4"
-            title="Текущие кредиты"
-            action={
-              <Button type="button" variant="secondary" onClick={addLoan}>
-                <Plus size={16} />
-                Добавить кредит
-              </Button>
-            }
-          />
-          <div className="flex flex-col gap-3 p-5">
-            {loans.length === 0 && (
-              <p className="text-sm text-ink-soft">
-                Текущих кредитов не указано. Если у клиента есть действующие обязательства —
-                добавьте их для расчёта долговой нагрузки.
-              </p>
-            )}
-            {loans.map((loan) => (
-              <div
-                key={loan.id}
-                className="grid grid-cols-1 gap-3 rounded-lg border border-line-strong p-3.5 sm:grid-cols-[1fr_180px_180px_auto] sm:items-end"
-              >
-                <FieldWrapper label="Название кредита" htmlFor={`loan-title-${loan.id}`}>
-                  <TextInput
-                    id={`loan-title-${loan.id}`}
-                    value={loan.title}
-                    onChange={(e) => updateLoan(loan.id, { title: e.target.value })}
-                    placeholder="Автокредит"
-                  />
-                </FieldWrapper>
-                <FieldWrapper label="Платёж, ₸/мес" htmlFor={`loan-payment-${loan.id}`}>
-                  <TextInput
-                    id={`loan-payment-${loan.id}`}
-                    type="number"
-                    min={0}
-                    value={loan.monthlyPayment || ""}
-                    onChange={(e) =>
-                      updateLoan(loan.id, { monthlyPayment: Number(e.target.value) || 0 })
-                    }
-                    placeholder="85000"
-                  />
-                </FieldWrapper>
-                <FieldWrapper label="Остаток долга, ₸" htmlFor={`loan-remaining-${loan.id}`}>
-                  <TextInput
-                    id={`loan-remaining-${loan.id}`}
-                    type="number"
-                    min={0}
-                    value={loan.remainingAmount || ""}
-                    onChange={(e) =>
-                      updateLoan(loan.id, { remainingAmount: Number(e.target.value) || 0 })
-                    }
-                    placeholder="1800000"
-                  />
-                </FieldWrapper>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => removeLoan(loan.id)}
-                  aria-label="Удалить кредит"
-                  className="text-risk hover:bg-risk-soft"
-                >
-                  <Trash2 size={16} />
-                </Button>
-              </div>
-            ))}
-            {loans.length > 0 && (
-              <p className="pt-1 text-sm text-ink-soft">
-                Суммарный ежемесячный платёж:{" "}
-                <span className="font-data font-medium text-ink">
-                  {formatTenge(totalMonthlyPayments)}
-                </span>
-              </p>
-            )}
+          <CardHeader eyebrow="Шаг 4" title="Текущие кредиты" />
+          <div className="flex items-start gap-3 p-5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-soft text-navy">
+              <FileText size={16} strokeWidth={1.75} />
+            </span>
+            <p className="text-sm text-ink-soft">
+              Ручной ввод кредитов здесь больше не требуется. После создания клиента
+              загрузите его кредитную историю (PDF) в карточке дела — система сама
+              распознает все действующие кредиты и заполнит этот раздел.
+            </p>
           </div>
         </Card>
 

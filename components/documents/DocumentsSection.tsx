@@ -19,8 +19,11 @@ import {
 } from "@/types/document";
 import { documentService } from "@/lib/services/documentService";
 import { caseService } from "@/lib/services/caseService";
+import { clientService } from "@/lib/services/clientService";
+import { timelineService } from "@/lib/services/timelineService";
 import { aiService } from "@/lib/services/aiService";
 import { findDiscrepancies } from "@/lib/matching";
+import { mapCreditsToExistingLoans, sumMonthlyPayments } from "@/lib/creditHistory";
 import {
   BLANK_FIELDS_BY_TYPE,
   GENERIC_BLANK_FIELDS,
@@ -60,10 +63,13 @@ export function DocumentsSection({
   client,
   caseId,
   onDocumentsChange,
+  onClientChange,
 }: {
   client: Client;
   caseId: string;
   onDocumentsChange?: (documents: ClientDocument[]) => void;
+  /** Вызывается, если данные клиента обновились (см. автозаполнение кредитов ниже). */
+  onClientChange?: (client: Client) => void;
 }) {
   const [documents, setDocuments] = useState<ClientDocument[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -171,12 +177,39 @@ export function DocumentsSection({
       });
   }
 
-  async function handleConfirm(doc: ClientDocument, confirmedFields: ExtractedFields) {
+  async function handleConfirm(
+    doc: ClientDocument,
+    confirmedFields: ExtractedFields,
+    applyCreditsToClient?: boolean
+  ) {
     await documentService.confirm(doc.id, confirmedFields);
 
     const discrepancies = findDiscrepancies(client, doc.type, confirmedFields);
     for (const discrepancy of discrepancies) {
       await caseService.addDiscrepancy(caseId, discrepancy);
+    }
+
+    // Кредитная история: если AI нашёл кредитные линии и консультант оставил
+    // включённой автозаполнение — переносим их в "Текущие кредиты" клиента,
+    // чтобы не перепечатывать их вручную (см. lib/creditHistory.ts).
+    if (doc.type === "credit_history" && applyCreditsToClient) {
+      const rawCredits = confirmedFields.credits;
+      if (Array.isArray(rawCredits) && rawCredits.length > 0) {
+        const existingLoans = mapCreditsToExistingLoans(rawCredits);
+        const estimatedMonthlyPayments = sumMonthlyPayments(existingLoans);
+        const updatedClient = await clientService.update(client.id, {
+          existingLoans,
+          estimatedMonthlyPayments,
+        });
+        if (updatedClient) {
+          onClientChange?.(updatedClient);
+          await timelineService.addEvent(
+            caseId,
+            "client_credits_synced",
+            `Текущие кредиты обновлены по кредитной истории: ${existingLoans.length} шт.`
+          );
+        }
+      }
     }
 
     setModalDocId(null);
@@ -367,7 +400,9 @@ export function DocumentsSection({
           isRetrying={analyzingId === modalDoc.id}
           startInEditMode={modalMode === "manual"}
           onClose={() => setModalDocId(null)}
-          onConfirm={(fields) => handleConfirm(modalDoc, fields)}
+          onConfirm={(fields, applyCreditsToClient) =>
+            handleConfirm(modalDoc, fields, applyCreditsToClient)
+          }
           onRetry={() => runAnalysis(modalDoc)}
         />
       )}

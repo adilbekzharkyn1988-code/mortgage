@@ -10,7 +10,17 @@ export type TimelineEventType =
   | "task_created"
   | "task_started"
   | "task_completed"
-  | "task_cancelled";
+  | "task_cancelled"
+  // ЭТАП 5: договоры и платежи
+  | "contract_created"
+  | "contract_updated"
+  | "contract_deleted"
+  | "contract_status_changed"
+  | "payment_added"
+  | "payment_updated"
+  | "payment_deleted"
+  // ЭТАП 6.1 (доп.): автозаполнение текущих кредитов клиента из кредитной истории
+  | "client_credits_synced";
 
 export interface TimelineEvent {
   id: string;

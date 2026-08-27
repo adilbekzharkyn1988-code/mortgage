@@ -6,8 +6,9 @@ import { ArrowLeft, Phone, MapPin, AlertTriangle, FileText, ListChecks } from "l
 import { clientService } from "@/lib/services/clientService";
 import { caseService } from "@/lib/services/caseService";
 import { taskService } from "@/lib/services/taskService";
+import { paymentService } from "@/lib/services/paymentService";
 import { Client, MARITAL_STATUS_LABELS } from "@/types/client";
-import { MortgageCase } from "@/types/mortgageCase";
+import { CASE_STAGE_LABELS, MortgageCase } from "@/types/mortgageCase";
 import { Task } from "@/types/task";
 import { ClientDocument } from "@/types/document";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -19,6 +20,11 @@ import { DocumentsSection } from "@/components/documents/DocumentsSection";
 import { DossierPanel } from "@/components/documents/DossierPanel";
 import { NextActionBlock } from "@/components/tasks/NextActionBlock";
 import { ActionPlanPanel } from "@/components/tasks/ActionPlanPanel";
+import { ContractPanel } from "@/components/finance/ContractPanel";
+import { FinancePanel } from "@/components/finance/FinancePanel";
+import { Contract } from "@/types/finance";
+import { AttentionItem, AttentionList } from "@/components/AttentionList";
+import { ExistingLoansPanel } from "@/components/ExistingLoansPanel";
 import { calculateDossierProgress } from "@/lib/progress";
 import { formatDate, formatTenge, calculateAge, getInitials } from "@/lib/format";
 
@@ -33,6 +39,16 @@ export default function ClientDetailPage({
   const [mortgageCase, setMortgageCase] = useState<MortgageCase | null>(null);
   const [nextActionTask, setNextActionTask] = useState<Task | null>(null);
   const [documents, setDocuments] = useState<ClientDocument[]>([]);
+  // ЭТАП 5: договор дела — нужен здесь, чтобы передать стоимость услуг
+  // в финансовый блок (FinancePanel), где вычисляется остаток.
+  const [contract, setContract] = useState<Contract | null>(null);
+  // ЭТАП 6, п.6.8: для блока "Требует внимания" нужно количество просроченных
+  // задач и оплаченный остаток дела — оба считаются по существующим сервисам.
+  const [overdueTasksCount, setOverdueTasksCount] = useState(0);
+  const [totalPaid, setTotalPaid] = useState(0);
+  // ЭТАП 4: счётчик, увеличивающийся при любом изменении задач — используется
+  // ниже, чтобы принудительно обновить NextActionBanner и блок "Требует внимания".
+  const [taskRefreshKey, setTaskRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +76,30 @@ export default function ClientDetailPage({
     };
   }, [id]);
 
+  // ЭТАП 6, п.6.8: пересчитываем данные для блока "Требует внимания"
+  // при смене дела или после изменения задач/оплат.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!mortgageCase) {
+        if (!cancelled) setOverdueTasksCount(0);
+        return;
+      }
+      const [tasks, paid] = await Promise.all([
+        taskService.getByCaseId(mortgageCase.id),
+        paymentService.getTotalPaid(mortgageCase.id),
+      ]);
+      if (cancelled) return;
+      setOverdueTasksCount(tasks.filter((t) => taskService.isOverdue(t)).length);
+      setTotalPaid(paid);
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mortgageCase?.id, taskRefreshKey]);
+
   const handleDocumentsChange = useCallback(
     async (docs: ClientDocument[]) => {
       setDocuments(docs);
@@ -86,7 +126,6 @@ export default function ClientDetailPage({
   // ЭТАП 4: план действий/задачи меняются внутри дочерних панелей — после
   // любого изменения задачи подтягиваем актуальное "следующее действие" для
   // существующего NextActionBanner (закреплённая задача дела).
-  const [taskRefreshKey, setTaskRefreshKey] = useState(0);
   const handleTaskChange = useCallback(async () => {
     setTaskRefreshKey((k) => k + 1);
     if (!mortgageCase) return;
@@ -120,6 +159,60 @@ export default function ClientDetailPage({
   const age = calculateAge(client.birthDate);
   const totalIncome = client.estimatedIncome + client.spouseIncome;
 
+  // ЭТАП 6, п.6.8: блок "Требует внимания" для этого конкретного дела —
+  // собирается из уже загруженных данных страницы (без новых сервисов).
+  const dossierProgress = mortgageCase ? calculateDossierProgress(client, documents) : null;
+  const latestAnalysis = mortgageCase?.analyses[mortgageCase.analyses.length - 1] ?? null;
+  const highRiskCount = latestAnalysis?.risks.filter((r) => r.severity === "high").length ?? 0;
+  const remaining = Math.max((contract?.totalAmount ?? 0) - totalPaid, 0);
+
+  const attentionItems: AttentionItem[] = [];
+  if (mortgageCase) {
+    if (overdueTasksCount > 0) {
+      attentionItems.push({
+        id: "overdue",
+        label: `Просроченные задачи: ${overdueTasksCount}`,
+        href: "#action-plan",
+      });
+    }
+    if (!mortgageCase.nextActionTaskId) {
+      attentionItems.push({
+        id: "next-action",
+        label: "Следующее действие не назначено",
+        href: "#action-plan",
+      });
+    }
+    if (mortgageCase.discrepancies.length > 0) {
+      attentionItems.push({
+        id: "discrepancies",
+        label: `Найдены расхождения: ${mortgageCase.discrepancies.length}`,
+        href: "#discrepancies",
+      });
+    }
+    if (highRiskCount > 0) {
+      attentionItems.push({
+        id: "risk",
+        label: `Высокий риск: ${highRiskCount}`,
+        href: "#dossier",
+      });
+    }
+    if (dossierProgress && dossierProgress.requiredDocumentTypes.length > 0) {
+      attentionItems.push({
+        id: "documents",
+        label: `Ожидаются документы: ${dossierProgress.requiredDocumentTypes.length}`,
+        href: "#documents",
+      });
+    }
+    if (contract && remaining > 0) {
+      attentionItems.push({
+        id: "unpaid",
+        label: `Неоплаченный остаток: ${formatTenge(remaining)}`,
+        href: "#finance",
+      });
+    }
+  }
+  const needsAttention = attentionItems.length > 0;
+
   return (
     <div className="flex flex-col gap-6">
       <Link
@@ -136,7 +229,20 @@ export default function ClientDetailPage({
             {getInitials(client.fullName)}
           </span>
           <div>
-            <h1 className="font-display text-2xl text-ink sm:text-3xl">{client.fullName}</h1>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="font-display text-2xl text-ink sm:text-3xl">{client.fullName}</h1>
+              {mortgageCase ? (
+                <Badge tone="navy">{CASE_STAGE_LABELS[mortgageCase.stage]}</Badge>
+              ) : (
+                <Badge tone="neutral">Без дела</Badge>
+              )}
+              {mortgageCase &&
+                (needsAttention ? (
+                  <Badge tone="risk">Требует внимания</Badge>
+                ) : (
+                  <Badge tone="success">В норме</Badge>
+                ))}
+            </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-soft">
               <span className="inline-flex items-center gap-1.5">
                 <Phone size={14} />
@@ -151,6 +257,16 @@ export default function ClientDetailPage({
           </div>
         </div>
       </div>
+
+      {/* ЭТАП 6, п.6.8: требует внимания — по этому конкретному делу */}
+      {mortgageCase && (
+        <Card>
+          <CardHeader eyebrow="Ипотечное дело" title="Требует внимания" />
+          <div className="p-5">
+            <AttentionList items={attentionItems} emptyMessage="По этому делу открытых проблем нет." />
+          </div>
+        </Card>
+      )}
 
       {/* Ипотечное дело: этап, прогресс, следующее действие */}
       <Card>
@@ -192,9 +308,17 @@ export default function ClientDetailPage({
         </div>
       </Card>
 
+      {/* ЭТАП 5: договор и финансы дела */}
+      {mortgageCase && (
+        <div id="finance" className="flex flex-col gap-6">
+          <ContractPanel caseId={mortgageCase.id} onContractChange={setContract} />
+          <FinancePanel caseId={mortgageCase.id} totalCost={contract?.totalAmount ?? 0} />
+        </div>
+      )}
+
       {/* Несоответствия */}
       {mortgageCase && mortgageCase.discrepancies.length > 0 && (
-        <Card>
+        <Card id="discrepancies">
           <CardHeader eyebrow="Проверка данных" title="Обнаруженные несоответствия" />
           <div className="flex flex-col gap-3 p-5">
             {mortgageCase.discrepancies.map((d) => (
@@ -251,66 +375,37 @@ export default function ClientDetailPage({
         </div>
       </Card>
 
-      {/* Текущие кредиты */}
-      <Card>
-        <CardHeader eyebrow="Карточка клиента" title="Текущие кредиты" />
-        <div className="p-5">
-          {client.existingLoans.length === 0 ? (
-            <p className="text-sm text-ink-soft">Текущих кредитов не указано.</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {client.existingLoans.map((loan) => (
-                <div
-                  key={loan.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-4 py-3"
-                >
-                  <p className="text-sm font-medium text-ink">{loan.title}</p>
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="text-ink-soft">
-                      Платёж: <span className="font-data text-ink">{formatTenge(loan.monthlyPayment)}</span>
-                    </span>
-                    {loan.remainingAmount !== undefined && (
-                      <span className="text-ink-soft">
-                        Остаток: <span className="font-data text-ink">{formatTenge(loan.remainingAmount)}</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <p className="mt-2 text-sm text-ink-soft">
-                Суммарный ежемесячный платёж:{" "}
-                <Badge tone="navy" className="font-data">
-                  {formatTenge(client.estimatedMonthlyPayments)}
-                </Badge>
-              </p>
-            </div>
-          )}
-        </div>
-      </Card>
+      {/* Текущие кредиты — ручной fallback + автозаполнение из PDF кредитной истории */}
+      <ExistingLoansPanel client={client} onClientChange={setClient} />
 
       {/* Документы + AI-анализ */}
       {mortgageCase && (
-        <DocumentsSection
-          client={client}
-          caseId={mortgageCase.id}
-          onDocumentsChange={handleDocumentsChange}
-        />
+        <div id="documents">
+          <DocumentsSection
+            client={client}
+            caseId={mortgageCase.id}
+            onDocumentsChange={handleDocumentsChange}
+            onClientChange={setClient}
+          />
+        </div>
       )}
 
       {/* Досье клиента: сводные подтверждённые данные + прогресс по категориям + AI-анализ */}
       {mortgageCase && (
-        <DossierPanel
-          client={client}
-          documents={documents}
-          caseId={mortgageCase.id}
-          onTaskCreated={handleTaskChange}
-        />
+        <div id="dossier">
+          <DossierPanel
+            client={client}
+            documents={documents}
+            caseId={mortgageCase.id}
+            onTaskCreated={handleTaskChange}
+          />
+        </div>
       )}
 
       {/* ЭТАП 4: план действий — умный расчёт следующего действия по задачам
           и полный список задач с фильтрами, статусами и приоритетами. */}
       {mortgageCase && (
-        <div key={taskRefreshKey} className="flex flex-col gap-6">
+        <div id="action-plan" key={taskRefreshKey} className="flex flex-col gap-6">
           <NextActionBlock caseId={mortgageCase.id} />
           <ActionPlanPanel caseId={mortgageCase.id} onTaskUpdate={handleTaskChange} />
         </div>
