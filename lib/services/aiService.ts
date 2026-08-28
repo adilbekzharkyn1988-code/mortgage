@@ -16,6 +16,10 @@
 
 import { ClientDocument, DocumentAnalysisResult, DocumentType, ExtractedFields, INCOME_PROOF_DOCUMENT_TYPES } from "@/types/document";
 import { DossierAnalysis } from "@/types/mortgageCase";
+import type { Client } from "@/types/client";
+import type { ProgramMatch } from "@/lib/bankMatching";
+import type { AffordabilitySummary } from "@/lib/affordability";
+import type { ProgramRecommendationResult } from "@/lib/ai/programRecommendation";
 import { caseService } from "./caseService";
 import { clientService } from "./clientService";
 import { documentService } from "./documentService";
@@ -149,6 +153,43 @@ export const aiService = {
     // Сервер только анализирует и ничего не хранит — сохраняем результат
     // в дело (localStorage) здесь, на клиенте.
     await caseService.addAnalysis(caseId, payload.result);
+
+    return payload.result;
+  },
+
+  /**
+   * Просит Gemini прокомментировать и отранжировать уже посчитанные
+   * (детерминированно, на клиенте — см. lib/bankMatching.ts) подходящие и
+   * неподходящие банковские программы. Ничего не сохраняет сам — вызывающий
+   * компонент решает, что делать с результатом (см. ProgramMatchPanel).
+   */
+  async recommendPrograms(
+    client: Client,
+    affordability: AffordabilitySummary,
+    eligible: ProgramMatch[],
+    ineligible: ProgramMatch[]
+  ): Promise<ProgramRecommendationResult> {
+    let response: Response;
+    try {
+      response = await fetch("/api/ai/recommend-programs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client, affordability, eligible, ineligible }),
+      });
+    } catch {
+      throw new Error("Не удалось связаться с сервером анализа. Проверьте соединение.");
+    }
+
+    let payload: { result?: ProgramRecommendationResult; error?: string } | null = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || !payload?.result) {
+      throw new Error(payload?.error ?? "Не удалось получить рекомендации по программам.");
+    }
 
     return payload.result;
   },

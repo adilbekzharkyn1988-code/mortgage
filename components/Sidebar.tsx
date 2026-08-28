@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, UserPlus, FolderKanban, ListChecks, CalendarDays } from "lucide-react";
+import { LayoutDashboard, Users, UserPlus, FolderKanban, ListChecks, CalendarDays, Landmark } from "lucide-react";
 import { ReactNode } from "react";
 
 const NAV_ITEMS: { href: string; label: string; icon: ReactNode; match: (p: string) => boolean }[] = [
@@ -29,6 +29,12 @@ const NAV_ITEMS: { href: string; label: string; icon: ReactNode; match: (p: stri
     label: "Календарь",
     icon: <CalendarDays size={18} strokeWidth={1.75} />,
     match: (p) => p.startsWith("/calendar"),
+  },
+  {
+    href: "/banks",
+    label: "Банки и программы",
+    icon: <Landmark size={18} strokeWidth={1.75} />,
+    match: (p) => p.startsWith("/banks"),
   },
   {
     href: "/clients/new",

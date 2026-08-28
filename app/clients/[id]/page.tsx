@@ -25,6 +25,7 @@ import { FinancePanel } from "@/components/finance/FinancePanel";
 import { Contract } from "@/types/finance";
 import { AttentionItem, AttentionList } from "@/components/AttentionList";
 import { ExistingLoansPanel } from "@/components/ExistingLoansPanel";
+import { ProgramMatchPanel } from "@/components/programs/ProgramMatchPanel";
 import { calculateDossierProgress } from "@/lib/progress";
 import { formatDate, formatTenge, calculateAge, getInitials } from "@/lib/format";
 
@@ -377,6 +378,11 @@ export default function ClientDetailPage({
 
       {/* Текущие кредиты — ручной fallback + автозаполнение из PDF кредитной истории */}
       <ExistingLoansPanel client={client} onClientChange={setClient} />
+
+      {/* Подбор банков и программ под клиента (детерминированный расчёт + AI-приоритизация) */}
+      <div id="programs">
+        <ProgramMatchPanel client={client} />
+      </div>
 
       {/* Документы + AI-анализ */}
       {mortgageCase && (
