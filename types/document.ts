@@ -54,13 +54,20 @@ export interface CreditLineItem {
   overdue: boolean | null;
 }
 
+// Одна строка отчисления из выписки ЕНПФ (см. lib/ai/prompts.ts —
+// pension_contributions, lib/income.ts — расчёт среднего дохода).
+export interface PensionContributionItem {
+  period: string | null;
+  amount: number | null;
+}
+
 // Универсальный контейнер извлечённых полей.
 // Конкретный набор ключей зависит от document_type (см. lib/ai/prompts.ts).
 // Значение null означает "AI не нашёл это поле в документе" — это осознанный
 // результат анализа, а не ошибка, и не должно заменяться выдуманными данными.
 export type ExtractedFields = Record<
   string,
-  string | number | boolean | null | CreditLineItem[]
+  string | number | boolean | null | CreditLineItem[] | PensionContributionItem[]
 >;
 
 export interface DocumentWarning {

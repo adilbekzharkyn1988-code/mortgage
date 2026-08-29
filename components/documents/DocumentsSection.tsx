@@ -195,7 +195,11 @@ export function DocumentsSection({
     if (doc.type === "credit_history" && applyCreditsToClient) {
       const rawCredits = confirmedFields.credits;
       if (Array.isArray(rawCredits) && rawCredits.length > 0) {
-        const existingLoans = mapCreditsToExistingLoans(rawCredits);
+        // Тип сужен по doc.type === "credit_history" — это точно кредитные
+        // линии, а не отчисления ЕНПФ (см. types/document.ts).
+        const existingLoans = mapCreditsToExistingLoans(
+          rawCredits as unknown as Parameters<typeof mapCreditsToExistingLoans>[0]
+        );
         const estimatedMonthlyPayments = sumMonthlyPayments(existingLoans);
         const updatedClient = await clientService.update(client.id, {
           existingLoans,

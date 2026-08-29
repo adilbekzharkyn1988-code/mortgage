@@ -8,9 +8,10 @@
  */
 
 import { Client } from "@/types/client";
-import { DocumentType, ExtractedFields } from "@/types/document";
+import { DocumentType, ExtractedFields, PensionContributionItem } from "@/types/document";
 import { Discrepancy } from "@/types/mortgageCase";
 import { formatTenge } from "@/lib/format";
+import { calculateIncomeFromPensionContributions } from "@/lib/income";
 
 function generateId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -90,19 +91,22 @@ export function findDiscrepancies(
     }
   }
 
-  // Пенсионные отчисления: зарплата считается как последнее отчисление × 10
-  // (обязательные пенсионные взносы — 10% от официального дохода).
+  // Пенсионные отчисления: зарплата считается как среднее отчисление за
+  // последний год × 10 (обязательные пенсионные взносы — 10% от официального
+  // дохода). См. lib/income.ts.
   if (documentType === "pension_contributions") {
-    const lastContribution = asNumber(confirmedFields.lastContributionAmount);
-    if (lastContribution !== null) {
-      const computedIncome = lastContribution * 10;
+    const contributions = Array.isArray(confirmedFields.contributions)
+      ? (confirmedFields.contributions as unknown as PensionContributionItem[])
+      : [];
+    const computedIncome = calculateIncomeFromPensionContributions(contributions);
+    if (computedIncome > 0) {
       if (Math.abs(computedIncome - client.estimatedIncome) > INCOME_TOLERANCE) {
         discrepancies.push({
           id: generateId("disc"),
           field: "Доход",
           sourceA: "Консультация",
           valueA: formatTenge(client.estimatedIncome),
-          sourceB: "Пенсионные отчисления (×10)",
+          sourceB: "Пенсионные отчисления (среднее за год × 10)",
           valueB: formatTenge(computedIncome),
           detectedAt: now,
         });

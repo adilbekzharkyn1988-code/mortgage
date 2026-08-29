@@ -7,7 +7,13 @@
  */
 
 import { Client } from "@/types/client";
-import { ClientDocument, ExtractedFields, INCOME_PROOF_DOCUMENT_TYPES } from "@/types/document";
+import {
+  ClientDocument,
+  ExtractedFields,
+  INCOME_PROOF_DOCUMENT_TYPES,
+  PensionContributionItem,
+} from "@/types/document";
+import { averagePensionContribution, calculateIncomeFromPensionContributions } from "@/lib/income";
 import {
   MortgageCase,
   DossierAnalysis,
@@ -198,12 +204,17 @@ function buildCaseAnalysisPrompt(caseData: CaseDataForAnalysis): string {
   }
 
   if (confirmedIncome) {
-    const lastContribution = asNumber(confirmedIncome.lastContributionAmount);
-    if (lastContribution !== null) {
+    const contributions = Array.isArray(confirmedIncome.contributions)
+      ? (confirmedIncome.contributions as unknown as PensionContributionItem[])
+      : [];
+    const average = averagePensionContribution(contributions);
+    if (average !== null) {
+      const computedIncome = calculateIncomeFromPensionContributions(contributions);
       lines.push(`✓ Пенсионные отчисления (ЕНПФ):`);
-      lines.push(`  - Последнее отчисление: ${lastContribution.toLocaleString()} ₸`);
-      lines.push(`  - Расчётный доход (отчисление × 10): ${(lastContribution * 10).toLocaleString()} ₸`);
-      lines.push(`  - Период: ${confirmedIncome.lastContributionPeriod || "(не указан)"}`);
+      lines.push(`  - Учтено отчислений за год: ${contributions.length}`);
+      lines.push(`  - Среднее отчисление за год: ${Math.round(average).toLocaleString()} ₸`);
+      lines.push(`  - Расчётный доход (среднее × 10): ${computedIncome.toLocaleString()} ₸`);
+      lines.push(`  - Последний период: ${confirmedIncome.lastContributionPeriod || "(не указан)"}`);
       lines.push(`  - Работодатель: ${confirmedIncome.employer || "(не найдено)"}`);
     } else {
       lines.push(`✓ Справка о доходах:`);

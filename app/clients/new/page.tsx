@@ -21,12 +21,16 @@ import { findDiscrepancies } from "@/lib/matching";
 import { mapCreditsToExistingLoans, sumMonthlyPayments } from "@/lib/creditHistory";
 import { formatTenge } from "@/lib/format";
 import {
+  averagePensionContribution,
+  calculateIncomeFromPensionContributions,
+} from "@/lib/income";
+import {
   Client,
   MARITAL_STATUS_LABELS,
   MaritalStatus,
   NewClientInput,
 } from "@/types/client";
-import { DocumentType, ExtractedFields } from "@/types/document";
+import { DocumentType, ExtractedFields, PensionContributionItem } from "@/types/document";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
@@ -192,8 +196,11 @@ export default function NewClientPage() {
   const resolvedBirthDate =
     form.birthDateManual || tryNormalizeDate(asFieldString(identity.fields?.birthDate));
 
-  const lastContribution = asFieldNumber(pension.fields?.lastContributionAmount);
-  const computedIncome = lastContribution !== null ? lastContribution * 10 : 0;
+  const pensionContributions = Array.isArray(pension.fields?.contributions)
+    ? (pension.fields!.contributions as unknown as PensionContributionItem[])
+    : [];
+  const averageContribution = averagePensionContribution(pensionContributions);
+  const computedIncome = calculateIncomeFromPensionContributions(pensionContributions);
 
   const creditLines = Array.isArray(credit.fields?.credits)
     ? (credit.fields!.credits as unknown as Parameters<typeof mapCreditsToExistingLoans>[0])
@@ -456,7 +463,7 @@ export default function NewClientPage() {
           <div className="flex flex-col gap-5 p-5">
             <DocUploadRow
               label="Пенсионные отчисления (ЕНПФ)"
-              hint="Доход рассчитывается автоматически как последнее отчисление × 10 (ОПВ — 10% от зарплаты)."
+              hint="Доход рассчитывается автоматически как среднее отчисление за последний год × 10 (ОПВ — 10% от зарплаты)."
               slot={pension}
               inputRef={pensionInputRef}
               onPick={(file) => handlePick("pension_contributions", file, setPension)}
@@ -469,11 +476,15 @@ export default function NewClientPage() {
                   {formatTenge(computedIncome)}
                 </p>
                 <p className="mt-1 text-xs text-ink-faint">
-                  Последнее отчисление:{" "}
-                  {formatTenge(asFieldNumber(pension.fields?.lastContributionAmount) ?? 0)}
-                  {pension.fields?.lastContributionPeriod
-                    ? ` · ${asFieldString(pension.fields.lastContributionPeriod)}`
-                    : ""}
+                  {pensionContributions.length > 0 ? (
+                    <>
+                      Среднее отчисление за {pensionContributions.length}{" "}
+                      {pensionContributions.length === 1 ? "месяц" : "мес."}:{" "}
+                      {formatTenge(Math.round(averageContribution ?? 0))}
+                    </>
+                  ) : (
+                    "Не удалось найти ни одного отчисления в выписке."
+                  )}
                 </p>
               </div>
             )}

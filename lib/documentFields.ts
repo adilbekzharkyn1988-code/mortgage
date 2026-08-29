@@ -95,6 +95,11 @@ export const BLANK_FIELDS_BY_TYPE: Record<string, ExtractedFields> = {
   },
   pension_contributions: {
     fullName: null,
+    // Все отчисления за последний год из выписки — основа для расчёта
+    // среднего дохода (см. lib/income.ts). lastContributionAmount/Period
+    // оставлены для отображения "последнего периода", но в расчёт дохода
+    // больше не идут напрямую.
+    contributions: [],
     lastContributionAmount: null,
     lastContributionPeriod: null,
     employer: null,

@@ -3,7 +3,13 @@
 import { useMemo, useState, useEffect } from "react";
 import { Braces, AlertCircle } from "lucide-react";
 import { Client } from "@/types/client";
-import { ClientDocument, DOCUMENT_TYPE_LABELS, ExtractedFields, INCOME_PROOF_DOCUMENT_TYPES } from "@/types/document";
+import {
+  ClientDocument,
+  DOCUMENT_TYPE_LABELS,
+  ExtractedFields,
+  INCOME_PROOF_DOCUMENT_TYPES,
+  PensionContributionItem,
+} from "@/types/document";
 import { DossierAnalysis } from "@/types/mortgageCase";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DetailField } from "@/components/ui/DetailField";
@@ -11,6 +17,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ProgressBar";
 import { calculateDossierProgress, PROGRESS_CATEGORY_LABELS } from "@/lib/progress";
 import { formatTenge, formatDate } from "@/lib/format";
+import { calculateIncomeFromPensionContributions } from "@/lib/income";
 import { aiService } from "@/lib/services/aiService";
 import { caseService } from "@/lib/services/caseService";
 import { CaseAnalysisPanel } from "./CaseAnalysisPanel";
@@ -170,18 +177,20 @@ export function DossierPanel({
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <DetailField label="Работодатель" value={asDisplay(income?.employer)} />
             <DetailField
-              label={typeof income?.lastContributionAmount === "number" ? "Источник" : "Должность"}
+              label={Array.isArray(income?.contributions) ? "Источник" : "Должность"}
               value={
-                typeof income?.lastContributionAmount === "number"
-                  ? "Пенсионные отчисления (×10)"
+                Array.isArray(income?.contributions)
+                  ? "Пенсионные отчисления (среднее за год × 10)"
                   : asDisplay(income?.position)
               }
             />
             <DetailField
               label="Доход"
               value={formatTenge(
-                typeof income?.lastContributionAmount === "number"
-                  ? income.lastContributionAmount * 10
+                Array.isArray(income?.contributions)
+                  ? calculateIncomeFromPensionContributions(
+                      income!.contributions as unknown as PensionContributionItem[]
+                    )
                   : typeof income?.monthlyIncome === "number"
                     ? income.monthlyIncome
                     : client.estimatedIncome
