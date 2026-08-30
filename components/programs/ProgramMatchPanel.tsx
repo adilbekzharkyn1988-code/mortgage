@@ -1,17 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Braces, CheckCircle2, ChevronDown, ChevronUp, Sparkles, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, Sparkles, XCircle } from "lucide-react";
 import { Client } from "@/types/client";
 import { PROGRAM_CATEGORY_LABELS } from "@/types/bank";
 import { bankService, programService } from "@/lib/services/bankService";
-import { aiService } from "@/lib/services/aiService";
 import { calculateAffordability } from "@/lib/affordability";
 import { matchPrograms, ProgramMatch } from "@/lib/bankMatching";
-import { ProgramRecommendationResult } from "@/lib/ai/programRecommendation";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
 import { DetailField } from "@/components/ui/DetailField";
 import { formatTenge } from "@/lib/format";
 
@@ -19,10 +16,6 @@ export function ProgramMatchPanel({ client }: { client: Client }) {
   const [loaded, setLoaded] = useState(false);
   const [matches, setMatches] = useState<ProgramMatch[]>([]);
   const [expandedIneligible, setExpandedIneligible] = useState(false);
-
-  const [recommendation, setRecommendation] = useState<ProgramRecommendationResult | null>(null);
-  const [isRecommending, setIsRecommending] = useState(false);
-  const [recommendError, setRecommendError] = useState<string | null>(null);
 
   const affordability = useMemo(() => calculateAffordability(client), [client]);
 
@@ -42,29 +35,6 @@ export function ProgramMatchPanel({ client }: { client: Client }) {
 
   const eligible = matches.filter((m) => m.eligible);
   const ineligible = matches.filter((m) => !m.eligible);
-
-  async function handleRecommend() {
-    setIsRecommending(true);
-    setRecommendError(null);
-    try {
-      const result = await aiService.recommendPrograms(client, affordability, eligible, ineligible);
-      setRecommendation(result);
-    } catch (error) {
-      setRecommendError(
-        error instanceof Error ? error.message : "Не удалось получить рекомендации по программам."
-      );
-    } finally {
-      setIsRecommending(false);
-    }
-  }
-
-  const recommendedOrder = recommendation
-    ? recommendation.recommended
-        .map((r) => eligible.find((m) => m.program.id === r.programId))
-        .filter((m): m is ProgramMatch => Boolean(m))
-    : [];
-  const recommendedIds = new Set(recommendedOrder.map((m) => m.program.id));
-  const restEligible = eligible.filter((m) => !recommendedIds.has(m.program.id));
 
   return (
     <Card>
@@ -126,58 +96,26 @@ export function ProgramMatchPanel({ client }: { client: Client }) {
                 </p>
               ) : (
                 <div className="flex flex-col gap-2.5">
-                  {recommendedOrder.map((match, idx) => (
-                    <ProgramCard
-                      key={match.program.id}
-                      match={match}
-                      rank={idx + 1}
-                      rationale={recommendation?.recommended.find((r) => r.programId === match.program.id)?.rationale}
-                    />
-                  ))}
-                  {restEligible.map((match) => (
+                  {eligible.map((match) => (
                     <ProgramCard key={match.program.id} match={match} />
                   ))}
                 </div>
               )}
             </div>
 
-            {/* AI-рекомендация */}
-            {eligible.length > 0 && (
-              <div className="flex flex-col gap-2 border-t border-line pt-4">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleRecommend}
-                  disabled={isRecommending}
-                  className="w-fit"
-                >
-                  <Sparkles size={15} />
-                  {isRecommending
-                    ? "AI подбирает приоритеты…"
-                    : recommendation
-                      ? "Обновить рекомендацию AI"
-                      : "Получить рекомендацию AI"}
-                </Button>
-                {recommendError && <p className="text-xs text-risk">{recommendError}</p>}
-                {recommendation && (
-                  <div className="rounded-lg border border-navy/15 bg-navy-soft/40 px-4 py-3">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-navy">
-                      <Braces size={13} /> Вывод AI
-                    </div>
-                    <p className="mt-1.5 text-sm text-ink">{recommendation.summary}</p>
-                    {recommendation.improvementTips.length > 0 && (
-                      <div className="mt-2.5 flex flex-col gap-1">
-                        {recommendation.improvementTips.map((tip, idx) => (
-                          <p key={idx} className="text-xs text-ink-soft">
-                            💡 {tip}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Развёрнутый план действий — не дублируем отдельным AI-вызовом
+                здесь: полный анализ (с учётом кредитов клиента, расхождений
+                и точных причин отказа по каждой программе) считается в
+                DossierPanel → "Анализ AI" и там же превращается в задачи. */}
+            <div className="border-t border-line pt-4">
+              <a
+                href="#dossier"
+                className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-navy/20 px-3 py-2 text-sm font-medium text-navy hover:bg-navy-soft/40"
+              >
+                <Sparkles size={15} />
+                Развёрнутый план действий — в разделе «Анализ AI»
+              </a>
+            </div>
 
             {/* Неподходящие программы */}
             {ineligible.length > 0 && (
@@ -215,15 +153,7 @@ export function ProgramMatchPanel({ client }: { client: Client }) {
   );
 }
 
-function ProgramCard({
-  match,
-  rank,
-  rationale,
-}: {
-  match: ProgramMatch;
-  rank?: number;
-  rationale?: string;
-}) {
+function ProgramCard({ match }: { match: ProgramMatch }) {
   return (
     <div
       className={`rounded-lg border px-4 py-3 ${
@@ -233,7 +163,6 @@ function ProgramCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            {rank && <Badge tone="navy">#{rank}</Badge>}
             <p className="text-sm font-medium text-ink">
               {match.bank.name} — {match.program.name}
             </p>
@@ -252,8 +181,6 @@ function ProgramCard({
           </div>
         )}
       </div>
-
-      {rationale && <p className="mt-2 text-sm text-ink-soft">{rationale}</p>}
 
       {!match.eligible && match.reasons.length > 0 && (
         <div className="mt-2 flex flex-col gap-1">
