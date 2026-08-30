@@ -14,6 +14,8 @@ import {
   PensionContributionItem,
 } from "@/types/document";
 import { averagePensionContribution, calculateIncomeFromPensionContributions } from "@/lib/income";
+import type { ProgramMatch } from "@/lib/bankMatching";
+import type { AffordabilitySummary } from "@/lib/affordability";
 import {
   MortgageCase,
   DossierAnalysis,
@@ -22,6 +24,7 @@ import {
   RiskSeverity,
   CreditBurden,
 } from "@/types/mortgageCase";
+import { formatTenge } from "@/lib/format";
 import { callGemini } from "./gemini";
 import { getCaseAnalysisPrompt } from "./prompts";
 
@@ -33,7 +36,17 @@ interface CaseDataForAnalysis {
   confirmedIdentity: ExtractedFields | null;
   confirmedIncome: ExtractedFields | null;
   confirmedCredit: ExtractedFields | null;
+  // Расхождения — единственный источник истины: детерминированный
+  // lib/matching.ts. AI их больше не ищет и не переопределяет (см. ниже) —
+  // только видит для контекста, чтобы не давать советы, противоречащие уже
+  // найденным фактам.
   existingDiscrepancies: Discrepancy[];
+  // Подбор банков/программ — тоже детерминированный расчёт (lib/bankMatching.ts),
+  // передаётся, чтобы рекомендации были привязаны к реальным банковским
+  // критериям, а не выдуманы с нуля.
+  affordability: AffordabilitySummary | null;
+  eligiblePrograms: ProgramMatch[];
+  ineligiblePrograms: ProgramMatch[];
 }
 
 function stripCodeFences(raw: string): string {
@@ -46,7 +59,6 @@ interface RawCaseAnalysisResult {
   summary?: unknown;
   confirmed?: unknown;
   missing?: unknown;
-  discrepancies?: unknown;
   risks?: unknown;
   creditBurden?: unknown;
   recommendations?: unknown;
@@ -92,28 +104,6 @@ function normalizeMissing(raw: unknown): string[] {
       return typeof msg === "string" && msg.trim().length > 0;
     })
     .map((item) => asString((item as Record<string, unknown>)?.message));
-}
-
-function normalizeDiscrepancies(raw: unknown): Discrepancy[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((item) => {
-      if (typeof item !== "object" || item === null) return false;
-      const d = item as Record<string, unknown>;
-      return typeof d.field === "string" && d.field.trim().length > 0;
-    })
-    .map((item, index) => {
-      const d = item as Record<string, unknown>;
-      return {
-        id: `discrepancy-${Date.now()}-${index}`,
-        field: asString(d.field),
-        sourceA: asString(d.sourceA) || "Консультация",
-        valueA: asString(d.consultationValue || d.valueA),
-        sourceB: asString(d.sourceB) || "Документ",
-        valueB: asString(d.documentValue || d.valueB),
-        detectedAt: new Date().toISOString(),
-      };
-    });
 }
 
 function normalizeRisks(raw: unknown): Risk[] {
@@ -237,6 +227,50 @@ function buildCaseAnalysisPrompt(caseData: CaseDataForAnalysis): string {
     lines.push(`✗ Кредитная история: не подтверждена`);
   }
 
+  lines.push("\n=== СПИСОК ТЕКУЩИХ КРЕДИТОВ КЛИЕНТА ===");
+  lines.push(
+    "Используй ТОЛЬКО эти названия кредитов, если советуешь какой-то из них закрыть " +
+      "или рефинансировать — не придумывай других кредиторов."
+  );
+  if (client.existingLoans.length > 0) {
+    client.existingLoans.forEach((loan) => {
+      lines.push(
+        `- «${loan.title}»: платёж ${formatTenge(loan.monthlyPayment)}/мес` +
+          (typeof loan.remainingAmount === "number"
+            ? `, остаток ${formatTenge(loan.remainingAmount)}`
+            : "")
+      );
+    });
+  } else {
+    lines.push("Кредитов не зарегистрировано.");
+  }
+
+  lines.push("\n=== ПОДБОР БАНКОВСКИХ ПРОГРАММ (расчёт уже выполнен кодом) ===");
+  if (caseData.affordability) {
+    const a = caseData.affordability;
+    lines.push(
+      `Доход семьи: ${formatTenge(a.householdIncome)} · Текущие платежи по кредитам: ` +
+        `${formatTenge(a.existingDebtPayments)} · Располагаемый доход: ${formatTenge(a.disposableIncome)}`
+    );
+  }
+  if (caseData.eligiblePrograms.length > 0) {
+    lines.push("Подходящие программы:");
+    caseData.eligiblePrograms.forEach((m) => {
+      lines.push(
+        `- «${m.program.name}» (${m.bank.name}), ставка ${m.program.interestRatePercent}%` +
+          (m.debtToIncomeRatio !== null ? `, нагрузка ${m.debtToIncomeRatio.toFixed(0)}%` : "")
+      );
+    });
+  } else {
+    lines.push("Подходящих программ по текущим данным нет.");
+  }
+  if (caseData.ineligiblePrograms.length > 0) {
+    lines.push("Не подходящие программы и точная причина отказа (это уже посчитано кодом):");
+    caseData.ineligiblePrograms.forEach((m) => {
+      lines.push(`- «${m.program.name}» (${m.bank.name}): ${m.reasons.join("; ")}`);
+    });
+  }
+
   lines.push("\n=== ЗАГРУЖЕННЫЕ ДОКУМЕНТЫ ===");
   const confirmedDocs = caseData.documents.filter((d) => d.status === "confirmed");
   const analyzedDocs = caseData.documents.filter((d) => d.status === "analyzed");
@@ -248,7 +282,7 @@ function buildCaseAnalysisPrompt(caseData: CaseDataForAnalysis): string {
   lines.push(`Не анализировано: ${uploadedDocs.length}`);
   lines.push(`Ошибка анализа: ${errorDocs.length}`);
 
-  lines.push("\n=== НЕСООТВЕТСТВИЯ ===");
+  lines.push("\n=== НЕСООТВЕТСТВИЯ (уже найдены кодом, НЕ ищи их заново) ===");
   if (caseData.existingDiscrepancies.length > 0) {
     caseData.existingDiscrepancies.forEach((d) => {
       lines.push(`- ${d.field}: ${d.sourceA} (${d.valueA}) vs ${d.sourceB} (${d.valueB})`);
@@ -259,9 +293,23 @@ function buildCaseAnalysisPrompt(caseData: CaseDataForAnalysis): string {
 
   lines.push("\n=== ЗАДАЧА ===");
   lines.push(
-    "Проанализируй всё досье целиком. Определи: какие данные подтверждены, " +
-      "какие отсутствуют, какие несоответствия между консультацией и документами, " +
-      "какие риски, какие рекомендации."
+    "Твоя задача — НЕ искать расхождения между источниками (это уже сделано детерминированным " +
+      "кодом и приведено в блоке НЕСООТВЕТСТВИЯ выше — используй его только как контекст, " +
+      "не создавай новых записей discrepancies и не повторяй его в discrepancies). Твоя " +
+      "задача — определить, какие данные подтверждены, каких данных не хватает, оценить " +
+      "риски и, ГЛАВНОЕ, дать консультанту конкретный план действий: что сделать, чтобы " +
+      "клиент прошёл по подходящей банковской программе."
+  );
+  lines.push(
+    "В recommendations давай конкретные, посчитанные советы, а не общие фразы. Если " +
+      "советуешь закрыть или рефинансировать кредит — называй его точно так, как он " +
+      "указан в блоке СПИСОК ТЕКУЩИХ КРЕДИТОВ, и покажи расчёт: вычти его ежемесячный " +
+      "платёж из общей суммы текущих платежей, пересчитай долговую нагрузку простым " +
+      "делением на доход семьи, и укажи получившийся процент в описании. Если советуешь " +
+      "конкретную программу — называй её точно так, как в блоке ПОДБОР БАНКОВСКИХ ПРОГРАММ. " +
+      "Плохой пример: «Рекомендуется снизить долговую нагрузку». Хороший пример: «Закрыть " +
+      "кредит «Kaspi Gold — кредитная карта» (платёж 45 000 ₸/мес) — нагрузка снизится с 62% " +
+      "до 48%, что укладывается в лимит программы «Baspana Hit» (Halyk Bank, до 50%)»."
   );
   lines.push(
     "Дополнительно рассчитай кредитную нагрузку (creditBurden): возьми суммарный " +
@@ -274,10 +322,10 @@ function buildCaseAnalysisPrompt(caseData: CaseDataForAnalysis): string {
       "Если данных недостаточно для расчёта — верни creditBurden: null."
   );
   lines.push(
-    "Не выдумывай данные, которых нет ни в консультации, ни в подтверждённых документах " +
-      "выше. Не приписывай значения источнику 'Документ', если это значение не встречается " +
-      "буквально в блоке ПОДТВЕРЖДЁННЫЕ ДОКУМЕНТЫ. Если информации недостаточно — напиши " +
-      "'Недостаточно данных'."
+    "Не выдумывай данные, которых нет ни в консультации, ни в подтверждённых документах, " +
+      "ни в блоках СПИСОК ТЕКУЩИХ КРЕДИТОВ / ПОДБОР БАНКОВСКИХ ПРОГРАММ выше. Все названия " +
+      "кредитов, банков и программ в рекомендациях должны буквально совпадать с тем, что " +
+      "перечислено в этих блоках. Если информации недостаточно — напиши 'Недостаточно данных'."
   );
 
   return lines.join("\n");
@@ -319,7 +367,10 @@ export async function analyzeMortgageCase(
     createdAt: new Date().toISOString(),
     confirmed: normalizeConfirmed(parsed.confirmed),
     missing: normalizeMissing(parsed.missing),
-    discrepancies: normalizeDiscrepancies(parsed.discrepancies),
+    // Расхождения НЕ парсятся из ответа Gemini — единственный источник
+    // истины здесь lib/matching.ts (детерминированный расчёт), см. комментарий
+    // у CaseDataForAnalysis.existingDiscrepancies.
+    discrepancies: caseData.existingDiscrepancies,
     risks: normalizeRisks(parsed.risks),
     creditBurden: normalizeCreditBurden(parsed.creditBurden),
     recommendations: normalizeRecommendations(parsed.recommendations),

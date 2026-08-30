@@ -17,12 +17,13 @@
 import { ClientDocument, DocumentAnalysisResult, DocumentType, ExtractedFields, INCOME_PROOF_DOCUMENT_TYPES } from "@/types/document";
 import { DossierAnalysis } from "@/types/mortgageCase";
 import type { Client } from "@/types/client";
-import type { ProgramMatch } from "@/lib/bankMatching";
-import type { AffordabilitySummary } from "@/lib/affordability";
+import { matchPrograms, type ProgramMatch } from "@/lib/bankMatching";
+import { calculateAffordability, type AffordabilitySummary } from "@/lib/affordability";
 import type { ProgramRecommendationResult } from "@/lib/ai/programRecommendation";
 import { caseService } from "./caseService";
 import { clientService } from "./clientService";
 import { documentService } from "./documentService";
+import { bankService, programService } from "./bankService";
 
 function getConfirmedFields(
   documents: ClientDocument[],
@@ -120,6 +121,14 @@ export const aiService = {
 
     const documents = await documentService.getByCaseId(caseId);
 
+    // Подбор банков/программ — тот же детерминированный расчёт, что и в
+    // ProgramMatchPanel (lib/bankMatching.ts). Передаём его в анализ, чтобы
+    // рекомендации Gemini были привязаны к реальным банковским критериям
+    // ("не хватает X%, чтобы пройти по программе Y"), а не выдуманы с нуля.
+    const [banks, programs] = await Promise.all([bankService.getAll(), programService.getAll()]);
+    const allMatches = matchPrograms(client, banks, programs);
+    const affordability = calculateAffordability(client);
+
     let response: Response;
     try {
       response = await fetch("/api/ai/analyze-case", {
@@ -133,6 +142,9 @@ export const aiService = {
           confirmedIncome: getConfirmedIncomeFields(documents),
           confirmedCredit: getConfirmedFields(documents, "credit_history"),
           existingDiscrepancies: mortgageCase.discrepancies,
+          affordability,
+          eligiblePrograms: allMatches.filter((m) => m.eligible),
+          ineligiblePrograms: allMatches.filter((m) => !m.eligible),
         }),
       });
     } catch {

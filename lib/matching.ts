@@ -130,6 +130,27 @@ export function findDiscrepancies(
         detectedAt: now,
       });
     }
+
+    // Количество кредитов, названное клиентом на консультации, часто не
+    // совпадает с тем, что реально видно в кредитной истории (клиент мог
+    // забыть закрытый кредит, посчитать лишний, или наоборот — не вспомнить
+    // про действующий). Это напрямую влияет на расчёт долговой нагрузки,
+    // поэтому проверяем это так же строго, как и сумму платежей.
+    const docActiveCreditsCount = asNumber(confirmedFields.activeCreditsCount);
+    if (
+      docActiveCreditsCount !== null &&
+      docActiveCreditsCount !== client.existingLoans.length
+    ) {
+      discrepancies.push({
+        id: generateId("disc"),
+        field: "Количество действующих кредитов",
+        sourceA: "Консультация",
+        valueA: String(client.existingLoans.length),
+        sourceB: "Кредитная история",
+        valueB: String(docActiveCreditsCount),
+        detectedAt: now,
+      });
+    }
   }
 
   return discrepancies;

@@ -34,3 +34,67 @@ export function mapCreditsToExistingLoans(credits: CreditLineItem[]): ExistingLo
 export function sumMonthlyPayments(loans: ExistingLoan[]): number {
   return loans.reduce((sum, loan) => sum + loan.monthlyPayment, 0);
 }
+
+// ============================================================================
+// "Кредиты-призраки": числятся действующими в отчёте ПКБ, но остаток по ним
+// уже 0. Причина обычно в том, что заёмщик погасил долг перед банком, но не
+// подал в ПКБ отдельное заявление о закрытии кредита — банк не делает это
+// автоматически. Из-за этого кредит продолжает висеть "активным" в кредитной
+// истории и может портить расчёт долговой нагрузки / решение банка по заявке,
+// хотя реального долга нет. Это чисто механическая проверка по уже
+// извлечённым полям (remainingBalance/status) — AI здесь ничего не решает.
+// ============================================================================
+
+export interface GhostCreditFinding {
+  creditor: string;
+  type: string | null;
+  monthlyPayment: number | null;
+  status: string | null;
+}
+
+function statusLooksClosed(status: string | null): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s.includes("закры") || s.includes("погаш");
+}
+
+/**
+ * Находит кредитные линии, где остаток задолженности равен 0, но статус в
+ * отчёте не говорит явно "закрыт"/"погашен" — то есть кредит формально всё
+ * ещё числится действующим. По каждой такой линии консультанту нужно
+ * поручить клиенту подать заявление в ПКБ на закрытие кредита.
+ */
+export function detectGhostCredits(credits: CreditLineItem[]): GhostCreditFinding[] {
+  return credits
+    .filter(
+      (item) =>
+        typeof item.remainingBalance === "number" &&
+        item.remainingBalance <= 0 &&
+        !statusLooksClosed(item.status)
+    )
+    .map((item) => ({
+      creditor: item.creditor || "Кредитор не указан",
+      type: item.type,
+      monthlyPayment: item.monthlyPayment,
+      status: item.status,
+    }));
+}
+
+/** Заголовок/описание задачи для консультанта по одному найденному "кредиту-призраку". */
+export function ghostCreditRecommendation(finding: GhostCreditFinding): {
+  title: string;
+  description: string;
+} {
+  const label = [finding.creditor, finding.type].filter(Boolean).join(" — ");
+  return {
+    title: `Закрыть кредит в ПКБ: ${label}`,
+    description:
+      `По данным кредитной истории остаток задолженности по этому кредиту — 0, ` +
+      `но в отчёте он всё ещё числится действующим` +
+      (finding.status ? ` (статус: «${finding.status}»)` : "") +
+      `. Вероятная причина — клиент погасил долг перед банком, но не подал ` +
+      `отдельное заявление в ПКБ о закрытии кредита. Нужно поручить клиенту ` +
+      `обратиться в ПКБ (Первое кредитное бюро) с заявлением о закрытии — иначе ` +
+      `кредит будет учитываться как активный при рассмотрении заявки банком.`,
+  };
+}

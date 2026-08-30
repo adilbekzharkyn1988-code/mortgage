@@ -16,10 +16,11 @@ import { DetailField } from "@/components/ui/DetailField";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ProgressBar";
 import { calculateDossierProgress, PROGRESS_CATEGORY_LABELS } from "@/lib/progress";
-import { formatTenge, formatDate } from "@/lib/format";
+import { formatTenge, formatDate, splitRecommendation } from "@/lib/format";
 import { calculateIncomeFromPensionContributions } from "@/lib/income";
 import { aiService } from "@/lib/services/aiService";
 import { caseService } from "@/lib/services/caseService";
+import { taskService } from "@/lib/services/taskService";
 import { CaseAnalysisPanel } from "./CaseAnalysisPanel";
 
 function getConfirmed(
@@ -88,6 +89,24 @@ export function DossierPanel({
       const result = await aiService.analyzeDossier(caseId);
       setAnalysis(result);
       onAnalysisComplete?.(result);
+
+      // Рекомендации AI сразу становятся задачами консультанта — без
+      // ручного нажатия "Добавить в план" под каждой. taskService сам
+      // защищает от дублей по названию задачи, так что повторный анализ
+      // досье не наплодит копии уже созданных задач.
+      let anyTaskCreated = false;
+      for (let idx = 0; idx < result.recommendations.length; idx++) {
+        const { title, description } = splitRecommendation(result.recommendations[idx]);
+        const created = await taskService.createTaskFromRecommendation(
+          caseId,
+          { title, description, priority: "medium" },
+          `rec_${idx}`
+        );
+        if (created) anyTaskCreated = true;
+      }
+      if (anyTaskCreated) {
+        onTaskCreated?.();
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Не удалось выполнить анализ досье.";

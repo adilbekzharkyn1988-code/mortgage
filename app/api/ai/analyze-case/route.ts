@@ -3,6 +3,8 @@ import { analyzeMortgageCase } from "@/lib/ai/caseAnalysis";
 import { Client } from "@/types/client";
 import { ClientDocument, ExtractedFields } from "@/types/document";
 import { Discrepancy, MortgageCase } from "@/types/mortgageCase";
+import type { ProgramMatch } from "@/lib/bankMatching";
+import type { AffordabilitySummary } from "@/lib/affordability";
 
 export const runtime = "nodejs";
 
@@ -30,6 +32,9 @@ interface AnalyzeCaseRequestBody {
   confirmedIncome?: ExtractedFields | null;
   confirmedCredit?: ExtractedFields | null;
   existingDiscrepancies?: Discrepancy[];
+  affordability?: AffordabilitySummary;
+  eligiblePrograms?: ProgramMatch[];
+  ineligiblePrograms?: ProgramMatch[];
 }
 
 export async function POST(request: NextRequest) {
@@ -65,6 +70,9 @@ export async function POST(request: NextRequest) {
       confirmedIncome: body.confirmedIncome ?? null,
       confirmedCredit: body.confirmedCredit ?? null,
       existingDiscrepancies: body.existingDiscrepancies ?? mortgageCase.discrepancies ?? [],
+      affordability: body.affordability ?? null,
+      eligiblePrograms: body.eligiblePrograms ?? [],
+      ineligiblePrograms: body.ineligiblePrograms ?? [],
     });
 
     // Сохранение результата в дело (localStorage) выполняется на клиенте,

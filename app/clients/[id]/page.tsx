@@ -392,6 +392,7 @@ export default function ClientDetailPage({
             caseId={mortgageCase.id}
             onDocumentsChange={handleDocumentsChange}
             onClientChange={setClient}
+            onTaskCreated={handleTaskChange}
           />
         </div>
       )}

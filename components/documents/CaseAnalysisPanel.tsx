@@ -13,7 +13,7 @@ import {
 import { DossierAnalysis, RISK_SEVERITY_LABELS } from "@/types/mortgageCase";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { formatDate, formatTenge } from "@/lib/format";
+import { formatDate, formatTenge, splitRecommendation } from "@/lib/format";
 import { AddToTaskPlanButton } from "@/components/tasks/AddToTaskPlanButton";
 
 interface CaseAnalysisPanelProps {
@@ -25,16 +25,8 @@ interface CaseAnalysisPanelProps {
 }
 
 // Рекомендации хранятся строкой вида "Заголовок: описание" (см.
-// normalizeRecommendations в lib/ai/caseAnalysis.ts). Разбираем её обратно
-// на заголовок/описание для карточки задачи (ЭТАП 4).
-function splitRecommendation(rec: string): { title: string; description: string } {
-  const separatorIndex = rec.indexOf(": ");
-  if (separatorIndex === -1) return { title: rec, description: rec };
-  return {
-    title: rec.slice(0, separatorIndex),
-    description: rec.slice(separatorIndex + 2),
-  };
-}
+// normalizeRecommendations в lib/ai/caseAnalysis.ts). Разбор — см. lib/format.ts,
+// используется здесь и в DossierPanel для автосоздания задач.
 
 export function CaseAnalysisPanel({ analysis, caseId, onTaskCreated }: CaseAnalysisPanelProps) {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({

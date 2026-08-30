@@ -12,6 +12,7 @@ import {
 import { Client } from "@/types/client";
 import {
   ClientDocument,
+  CreditLineItem,
   DOCUMENT_TYPE_LABELS,
   DOCUMENT_STATUS_LABELS,
   DocumentType,
@@ -22,8 +23,14 @@ import { caseService } from "@/lib/services/caseService";
 import { clientService } from "@/lib/services/clientService";
 import { timelineService } from "@/lib/services/timelineService";
 import { aiService } from "@/lib/services/aiService";
+import { taskService } from "@/lib/services/taskService";
 import { findDiscrepancies } from "@/lib/matching";
-import { mapCreditsToExistingLoans, sumMonthlyPayments } from "@/lib/creditHistory";
+import {
+  detectGhostCredits,
+  ghostCreditRecommendation,
+  mapCreditsToExistingLoans,
+  sumMonthlyPayments,
+} from "@/lib/creditHistory";
 import {
   BLANK_FIELDS_BY_TYPE,
   GENERIC_BLANK_FIELDS,
@@ -64,12 +71,15 @@ export function DocumentsSection({
   caseId,
   onDocumentsChange,
   onClientChange,
+  onTaskCreated,
 }: {
   client: Client;
   caseId: string;
   onDocumentsChange?: (documents: ClientDocument[]) => void;
   /** Вызывается, если данные клиента обновились (см. автозаполнение кредитов ниже). */
   onClientChange?: (client: Client) => void;
+  /** Вызывается, если автоматически создана задача (см. "кредиты-призраки" ниже). */
+  onTaskCreated?: () => void;
 }) {
   const [documents, setDocuments] = useState<ClientDocument[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -189,29 +199,47 @@ export function DocumentsSection({
       await caseService.addDiscrepancy(caseId, discrepancy);
     }
 
-    // Кредитная история: если AI нашёл кредитные линии и консультант оставил
-    // включённой автозаполнение — переносим их в "Текущие кредиты" клиента,
-    // чтобы не перепечатывать их вручную (см. lib/creditHistory.ts).
-    if (doc.type === "credit_history" && applyCreditsToClient) {
+    // Кредитная история: если AI нашёл кредитные линии — сначала проверяем
+    // на "кредиты-призраки" (это делаем ВСЕГДА, вне зависимости от того,
+    // включена ли автозаполнение "Текущих кредитов" — это не про данные
+    // клиента, а про обязательное действие в ПКБ). Затем, если консультант
+    // оставил автозаполнение включённой, переносим кредиты в "Текущие
+    // кредиты" клиента, чтобы не перепечатывать их вручную.
+    if (doc.type === "credit_history") {
       const rawCredits = confirmedFields.credits;
       if (Array.isArray(rawCredits) && rawCredits.length > 0) {
         // Тип сужен по doc.type === "credit_history" — это точно кредитные
         // линии, а не отчисления ЕНПФ (см. types/document.ts).
-        const existingLoans = mapCreditsToExistingLoans(
-          rawCredits as unknown as Parameters<typeof mapCreditsToExistingLoans>[0]
-        );
-        const estimatedMonthlyPayments = sumMonthlyPayments(existingLoans);
-        const updatedClient = await clientService.update(client.id, {
-          existingLoans,
-          estimatedMonthlyPayments,
-        });
-        if (updatedClient) {
-          onClientChange?.(updatedClient);
-          await timelineService.addEvent(
+        const credits = rawCredits as unknown as CreditLineItem[];
+
+        const ghostCredits = detectGhostCredits(credits);
+        for (const finding of ghostCredits) {
+          const recommendation = ghostCreditRecommendation(finding);
+          const created = await taskService.createTaskFromRecommendation(
             caseId,
-            "client_credits_synced",
-            `Текущие кредиты обновлены по кредитной истории: ${existingLoans.length} шт.`
+            { ...recommendation, priority: "high" },
+            `ghost_credit_${finding.creditor.toLowerCase().replace(/\s+/g, "_")}`
           );
+          if (created) {
+            onTaskCreated?.();
+          }
+        }
+
+        if (applyCreditsToClient) {
+          const existingLoans = mapCreditsToExistingLoans(credits);
+          const estimatedMonthlyPayments = sumMonthlyPayments(existingLoans);
+          const updatedClient = await clientService.update(client.id, {
+            existingLoans,
+            estimatedMonthlyPayments,
+          });
+          if (updatedClient) {
+            onClientChange?.(updatedClient);
+            await timelineService.addEvent(
+              caseId,
+              "client_credits_synced",
+              `Текущие кредиты обновлены по кредитной истории: ${existingLoans.length} шт.`
+            );
+          }
         }
       }
     }

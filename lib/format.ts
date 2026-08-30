@@ -70,3 +70,16 @@ export function getInitials(fullName: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
 }
+
+// Рекомендации AI-анализа хранятся одной строкой вида "Заголовок: описание"
+// (см. normalizeRecommendations в lib/ai/caseAnalysis.ts). Общий разбор для
+// CaseAnalysisPanel (кнопка "Добавить в план") и DossierPanel (автосоздание
+// задач), чтобы заголовок/описание задачи формировались одинаково в обоих местах.
+export function splitRecommendation(rec: string): { title: string; description: string } {
+  const separatorIndex = rec.indexOf(": ");
+  if (separatorIndex === -1) return { title: rec, description: rec };
+  return {
+    title: rec.slice(0, separatorIndex),
+    description: rec.slice(separatorIndex + 2),
+  };
+}
