@@ -11,7 +11,7 @@ import { CaseStage, CASE_STAGE_LABELS, CASE_STAGE_ORDER } from "@/types/mortgage
 import { Card } from "@/components/ui/Card";
 import { LinkButton } from "@/components/ui/Button";
 import { TextInput, SelectInput } from "@/components/ui/FormField";
-import { ClientListRow } from "@/components/ClientListRow";
+import { ClientListCard } from "@/components/ClientListCard";
 
 type QuickFilter = "all" | "active" | "completed" | "overdue" | "needs_attention" | "awaiting_documents";
 
@@ -128,11 +128,10 @@ function ClientsPageContent() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-ink-faint">
-            База клиентов
-          </p>
-          <h1 className="font-display text-2xl text-ink sm:text-3xl">Клиенты</h1>
-          <p className="mt-1 text-sm text-ink-soft">
+          <h1 className="font-display text-[26px] font-semibold text-ink sm:text-[28px]">
+            Клиенты
+          </h1>
+          <p className="mt-1.5 text-[14px] text-ink-soft">
             {overviews ? `Найдено: ${filtered.length} из ${overviews.length}` : "Загрузка…"}
           </p>
         </div>
@@ -204,33 +203,35 @@ function ClientsPageContent() {
         </div>
       </div>
 
-      <Card>
-        <div className="divide-y divide-line">
-          {overviews === null && (
-            <p className="px-5 py-8 text-center text-sm text-ink-soft">Загрузка…</p>
-          )}
-          {overviews !== null && overviews.length === 0 && (
-            <div className="flex flex-col items-center gap-3 px-5 py-12 text-center">
-              <p className="font-medium text-ink">Нет клиентов</p>
-              <p className="text-sm text-ink-soft">
-                Добавьте первого клиента, чтобы начать работу.
-              </p>
-              <LinkButton href="/clients/new">
-                <UserPlus size={16} />
-                Добавить клиента
-              </LinkButton>
-            </div>
-          )}
-          {overviews !== null && overviews.length > 0 && filtered.length === 0 && (
-            <p className="px-5 py-8 text-center text-sm text-ink-soft">
-              Ничего не найдено по заданным условиям.
+      <div>
+        {overviews === null && (
+          <p className="px-1 py-8 text-center text-sm text-ink-soft">Загрузка…</p>
+        )}
+        {overviews !== null && overviews.length === 0 && (
+          <Card className="flex flex-col items-center gap-3 px-5 py-12 text-center">
+            <p className="font-medium text-ink">Нет клиентов</p>
+            <p className="text-sm text-ink-soft">
+              Добавьте первого клиента, чтобы начать работу.
             </p>
-          )}
-          {filtered.map((overview) => (
-            <ClientListRow key={overview.client.id} overview={overview} />
-          ))}
-        </div>
-      </Card>
+            <LinkButton href="/clients/new">
+              <UserPlus size={16} />
+              Добавить клиента
+            </LinkButton>
+          </Card>
+        )}
+        {overviews !== null && overviews.length > 0 && filtered.length === 0 && (
+          <p className="px-1 py-8 text-center text-sm text-ink-soft">
+            Ничего не найдено по заданным условиям.
+          </p>
+        )}
+        {filtered.length > 0 && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((overview) => (
+              <ClientListCard key={overview.client.id} overview={overview} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -3,48 +3,47 @@
 /*
   Дизайн-токены MVP CRM для ипотечных брокеров.
 
-  Идея направления: "рабочий стол ипотечного досье" — спокойная,
-  профессиональная палитра, вдохновлённая канцелярией и банковскими
-  бланками (бумага, чернила, сургучная печать), без типового
-  AI-стартаперского вида (кремовый фон + терракота).
+  Направление: лёгкий, воздушный современный рабочий инструмент —
+  светлый нейтральный фон, один чёткий акцент (индиго), сдержанная
+  семантика статусов (тревога/предупреждение/успех), без тёмной
+  "банковской" тяжеловесности и без клише тёплого кремового AI-фона.
 
-  Шрифты:
-  - PT Serif  — заголовки, "документный" акцент
-  - IBM Plex Sans — основной интерфейсный текст (хорошо читается на кириллице)
-  - IBM Plex Mono — денежные суммы и другие цифровые данные
+  Шрифт: Inter везде (заголовки и текст) — с разными весами вместо
+  смены гарнитуры. Числа (деньги, проценты) используют табличные
+  цифры через .font-data (см. ниже) вместо отдельного моноширинного шрифта.
 */
 
 :root {
-  --color-paper: #f6f6f1;
+  --color-paper: #fafafb;
   --color-surface: #ffffff;
-  --color-surface-sunken: #f0efe8;
+  --color-surface-sunken: #f4f5f7;
 
-  --color-ink: #1c2430;
-  --color-ink-soft: #5b6472;
-  --color-ink-faint: #8a91a0;
+  --color-ink: #1a1b23;
+  --color-ink-soft: #6b6e7d;
+  --color-ink-faint: #9799a8;
 
-  --color-line: #e2e0d5;
-  --color-line-strong: #cfccbd;
+  --color-line: #ebebf0;
+  --color-line-strong: #dcdde4;
 
-  --color-navy: #1f3a5f;
-  --color-navy-dark: #16283f;
-  --color-navy-soft: #e8eef4;
+  --color-navy: #4f46e5;
+  --color-navy-dark: #14152b;
+  --color-navy-soft: #eef0fe;
 
-  --color-brass: #a9793f;
-  --color-brass-soft: #f3e9d8;
+  --color-brass: #d97706;
+  --color-brass-soft: #fdf1de;
 
-  --color-risk: #b3492e;
-  --color-risk-soft: #f8e6e0;
+  --color-risk: #e6483a;
+  --color-risk-soft: #fdecea;
 
-  --color-warn: #9c7a1f;
-  --color-warn-soft: #f6eed7;
+  --color-warn: #ca8a04;
+  --color-warn-soft: #fbf3da;
 
-  --color-success: #2e6b4f;
-  --color-success-soft: #e4eee8;
+  --color-success: #1a9c63;
+  --color-success-soft: #e5f6ee;
 
-  --font-display: "PT Serif", "Georgia", serif;
-  --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
-  --font-data: "IBM Plex Mono", "SFMono-Regular", monospace;
+  --font-display: var(--font-inter), "Segoe UI", sans-serif;
+  --font-body: var(--font-inter), "Segoe UI", sans-serif;
+  --font-data: var(--font-inter), "Segoe UI", sans-serif;
 }
 
 @theme inline {
@@ -96,8 +95,15 @@ body {
 }
 
 ::selection {
-  background: var(--color-brass-soft);
+  background: var(--color-navy-soft);
   color: var(--color-navy-dark);
+}
+
+/* Табличные (моноширинные по ширине) цифры для денег и процентов —
+   чтобы колонки чисел выравнивались, без переключения на другой шрифт. */
+.font-data {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 /* Видимый фокус для клавиатурной навигации — не убираем outline, а стилизуем его. */

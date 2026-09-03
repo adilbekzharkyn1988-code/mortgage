@@ -14,6 +14,7 @@ import {
   PensionContributionItem,
 } from "@/types/document";
 import { averagePensionContribution, calculateIncomeFromPensionContributions } from "@/lib/income";
+import { detectStaleClosedLoans } from "@/lib/matching";
 import type { ProgramMatch } from "@/lib/bankMatching";
 import type { AffordabilitySummary } from "@/lib/affordability";
 import {
@@ -362,6 +363,11 @@ export async function analyzeMortgageCase(
 
   const parsed = parseGeminiJson(rawResponse);
 
+  // Кредиты-призраки — детерминированная проверка (см. lib/matching.ts),
+  // не запрашивается у Gemini, добавляется к результату так же, как и
+  // discrepancies выше.
+  const staleLoanFindings = detectStaleClosedLoans(caseDataWithConfirmed.confirmedCredit);
+
   return {
     id: `analysis-${Date.now()}`,
     createdAt: new Date().toISOString(),
@@ -371,8 +377,11 @@ export async function analyzeMortgageCase(
     // истины здесь lib/matching.ts (детерминированный расчёт), см. комментарий
     // у CaseDataForAnalysis.existingDiscrepancies.
     discrepancies: caseData.existingDiscrepancies,
-    risks: normalizeRisks(parsed.risks),
+    risks: [...staleLoanFindings.map((f) => f.risk), ...normalizeRisks(parsed.risks)],
     creditBurden: normalizeCreditBurden(parsed.creditBurden),
-    recommendations: normalizeRecommendations(parsed.recommendations),
+    recommendations: [
+      ...staleLoanFindings.map((f) => f.recommendation),
+      ...normalizeRecommendations(parsed.recommendations),
+    ],
   };
 }

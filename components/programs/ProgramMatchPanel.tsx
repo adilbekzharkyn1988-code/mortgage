@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { CheckCircle2, ChevronDown, ChevronUp, Sparkles, XCircle } from "lucide-react";
 import { Client } from "@/types/client";
 import { PROGRAM_CATEGORY_LABELS } from "@/types/bank";
@@ -108,13 +109,13 @@ export function ProgramMatchPanel({ client }: { client: Client }) {
                 и точных причин отказа по каждой программе) считается в
                 DossierPanel → "Анализ AI" и там же превращается в задачи. */}
             <div className="border-t border-line pt-4">
-              <a
-                href="#dossier"
+              <Link
+                href="?tab=documents"
                 className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-navy/20 px-3 py-2 text-sm font-medium text-navy hover:bg-navy-soft/40"
               >
                 <Sparkles size={15} />
-                Развёрнутый план действий — в разделе «Анализ AI»
-              </a>
+                Развёрнутый план действий — в разделе «Документы и ИИ»
+              </Link>
             </div>
 
             {/* Неподходящие программы */}

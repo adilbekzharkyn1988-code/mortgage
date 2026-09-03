@@ -175,6 +175,83 @@ export async function getClientOverviews(): Promise<ClientOverview[]> {
     .sort((a, b) => (a.client.updatedAt < b.client.updatedAt ? 1 : -1));
 }
 
+// ==============================================================================
+// Очередь "Что делать сейчас" — единый ранжированный список конкретных
+// действий по всем клиентам, чтобы консультант не искал сам, за что браться.
+// Собирается из просроченных задач, задач на сегодня и дел без назначенного
+// следующего действия. Серьёзность = приоритет задачи + давность просрочки.
+// ==============================================================================
+
+export type ActionSeverity = "critical" | "high" | "medium";
+
+export interface ActionQueueItem {
+  id: string;
+  clientId: string;
+  clientName: string;
+  title: string;
+  severity: ActionSeverity;
+  detail: string; // например "Просрочено на 9 дней" / "Сегодня" / "Не назначено"
+  href: string;
+}
+
+function daysOverdue(dueDate: string): number {
+  const due = new Date(dueDate).getTime();
+  const now = Date.now();
+  return Math.max(0, Math.floor((now - due) / (1000 * 60 * 60 * 24)));
+}
+
+export function getActionQueue(overviews: ClientOverview[], taskOverview: GlobalTaskOverview): ActionQueueItem[] {
+  const items: ActionQueueItem[] = [];
+
+  for (const task of taskOverview.overdue) {
+    const overdueDays = task.dueDate ? daysOverdue(task.dueDate) : 0;
+    const severity: ActionSeverity =
+      task.priority === "high" || overdueDays > 7
+        ? "critical"
+        : overdueDays > 0
+          ? "high"
+          : "medium";
+    items.push({
+      id: `overdue-${task.id}`,
+      clientId: task.clientId,
+      clientName: task.clientName,
+      title: task.title,
+      severity,
+      detail: overdueDays > 0 ? `Просрочено на ${overdueDays} дн.` : "Просрочено",
+      href: `/clients/${task.clientId}?tab=tasks`,
+    });
+  }
+
+  for (const task of taskOverview.today) {
+    items.push({
+      id: `today-${task.id}`,
+      clientId: task.clientId,
+      clientName: task.clientName,
+      title: task.title,
+      severity: task.priority === "high" ? "high" : "medium",
+      detail: "Сегодня",
+      href: `/clients/${task.clientId}?tab=tasks`,
+    });
+  }
+
+  for (const overview of overviews) {
+    if (overview.mortgageCase && !overview.mortgageCase.nextActionTaskId && overview.isActive) {
+      items.push({
+        id: `next-action-${overview.client.id}`,
+        clientId: overview.client.id,
+        clientName: overview.client.fullName,
+        title: "Назначить следующее действие",
+        severity: "medium",
+        detail: "Не назначено",
+        href: `/clients/${overview.client.id}?tab=tasks`,
+      });
+    }
+  }
+
+  const severityRank: Record<ActionSeverity, number> = { critical: 0, high: 1, medium: 2 };
+  return items.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
+}
+
 /** Считает дела по этапам воронки — для блока "Воронка ипотеки" на Dashboard. */
 export function getFunnelCounts(overviews: ClientOverview[]): Record<CaseStage, number> {
   const counts = Object.fromEntries(CASE_STAGE_ORDER.map((s) => [s, 0])) as Record<

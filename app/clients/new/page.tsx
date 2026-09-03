@@ -112,10 +112,6 @@ function asFieldString(value: ExtractedFields[string] | undefined): string {
   return typeof value === "string" ? value : "";
 }
 
-function asFieldNumber(value: ExtractedFields[string] | undefined): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
 // ---------------------------------------------------------------------------
 
 type FormState = {
@@ -328,35 +324,47 @@ export default function NewClientPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-ink-faint">
-          Первичная консультация
-        </p>
-        <h1 className="font-display text-2xl text-ink sm:text-3xl">Новый клиент</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          Загрузите документы клиента — AI извлечёт данные автоматически. После сохранения
+        <h1 className="font-display text-[26px] font-semibold text-ink sm:text-[28px]">
+          Новый клиент
+        </h1>
+        <p className="mt-1.5 text-[14px] text-ink-soft">
+          Загрузите документы клиента — ИИ извлечёт данные автоматически. После сохранения
           создаётся ипотечное дело на этапе «Консультация».
         </p>
       </div>
 
       {/* Индикатор шагов */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center">
         {STEP_TITLES.map((title, idx) => {
           const n = idx + 1;
           const active = n === step;
           const done = n < step;
+          const isLast = idx === STEP_TITLES.length - 1;
           return (
-            <div
-              key={title}
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${
-                active
-                  ? "border-navy bg-navy-soft text-navy"
-                  : done
-                    ? "border-success/30 bg-success-soft text-success"
-                    : "border-line text-ink-faint"
-              }`}
-            >
-              {done ? <CheckCircle2 size={13} /> : <span>{n}</span>}
-              <span className="hidden sm:inline">{title}</span>
+            <div key={title} className="flex flex-1 items-center">
+              <div className="flex flex-col items-center gap-1.5">
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors ${
+                    active
+                      ? "bg-navy text-white"
+                      : done
+                        ? "bg-success text-white"
+                        : "bg-surface-sunken text-ink-faint"
+                  }`}
+                >
+                  {done ? <CheckCircle2 size={14} /> : n}
+                </span>
+                <span
+                  className={`hidden max-w-[92px] text-center text-[11px] leading-tight sm:block ${
+                    active ? "font-medium text-ink" : "text-ink-faint"
+                  }`}
+                >
+                  {title}
+                </span>
+              </div>
+              {!isLast && (
+                <div className={`mx-1.5 h-px flex-1 ${done ? "bg-success" : "bg-line"}`} />
+              )}
             </div>
           );
         })}
@@ -614,9 +622,7 @@ export default function NewClientPage() {
             </div>
 
             <div className="flex flex-col gap-2 border-t border-line pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
-                Документы для дела
-              </p>
+              <p className="text-[13px] font-medium text-ink-soft">Документы для дела</p>
               <DocSummaryRow label="Удостоверение личности" slot={identity} />
               <DocSummaryRow label="Пенсионные отчисления" slot={pension} />
               <DocSummaryRow label="Кредитная история" slot={credit} />

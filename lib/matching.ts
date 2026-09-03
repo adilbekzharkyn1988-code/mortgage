@@ -8,8 +8,8 @@
  */
 
 import { Client } from "@/types/client";
-import { DocumentType, ExtractedFields, PensionContributionItem } from "@/types/document";
-import { Discrepancy } from "@/types/mortgageCase";
+import { CreditLineItem, DocumentType, ExtractedFields, PensionContributionItem } from "@/types/document";
+import { Discrepancy, Risk } from "@/types/mortgageCase";
 import { formatTenge } from "@/lib/format";
 import { calculateIncomeFromPensionContributions } from "@/lib/income";
 
@@ -154,4 +154,64 @@ export function findDiscrepancies(
   }
 
   return discrepancies;
+}
+
+// ==============================================================================
+// "Кредиты-призраки" — кредитная линия, у которой статус в кредитной истории
+// указывает "закрыт", но при этом есть непогашенный остаток и/или просрочка.
+// Это значит, что банк/БКИ не актуализировал данные — и по такому кредиту
+// нужно отдельное заявление на обновление статуса, иначе он будет мешать
+// расчёту долговой нагрузки и одобрению ипотеки. Детерминированная проверка —
+// не спрашиваем у AI, чтобы не полагаться на его подсчёт остатков.
+// ==============================================================================
+
+const CLOSED_STATUS_PATTERN = /закры/i;
+
+export interface StaleClosedLoanFinding {
+  risk: Risk;
+  /** Готовая строка рекомендации в формате "Заголовок: описание" — тот же
+   *  формат, что использует lib/ai/caseAnalysis.ts, чтобы попасть в общий
+   *  список recommendations и участвовать в пакетном создании задач. */
+  recommendation: string;
+}
+
+export function detectStaleClosedLoans(
+  confirmedCredit: ExtractedFields | null
+): StaleClosedLoanFinding[] {
+  if (!confirmedCredit) return [];
+  const credits = Array.isArray(confirmedCredit.credits)
+    ? (confirmedCredit.credits as unknown as CreditLineItem[])
+    : [];
+
+  const findings: StaleClosedLoanFinding[] = [];
+
+  for (const line of credits) {
+    const statusIsClosed = typeof line.status === "string" && CLOSED_STATUS_PATTERN.test(line.status);
+    if (!statusIsClosed) continue;
+
+    const hasBalance = typeof line.remainingBalance === "number" && line.remainingBalance > 0;
+    const isOverdue = line.overdue === true;
+    if (!hasBalance && !isOverdue) continue;
+
+    const creditor = line.creditor?.trim() || "неизвестный кредитор";
+    const details = [
+      hasBalance ? `остаток ${formatTenge(line.remainingBalance)}` : null,
+      isOverdue ? "есть просрочка" : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    findings.push({
+      risk: {
+        id: generateId("stale-loan"),
+        title: `Кредит «${creditor}» числится закрытым, но не актуализирован`,
+        description: `В кредитной истории статус указан как "закрыт", но ${details}. Банк, вероятно, не передал обновление в БКИ — это будет мешать расчёту долговой нагрузки и одобрению ипотеки.`,
+        severity: "high",
+        relatedField: "Кредитная история",
+      },
+      recommendation: `Актуализировать статус кредита «${creditor}»: направить заявление в банк-кредитор на обновление данных в кредитной истории — кредит числится закрытым, но ${details}`,
+    });
+  }
+
+  return findings;
 }

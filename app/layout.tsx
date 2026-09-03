@@ -1,26 +1,16 @@
 import type { Metadata } from "next";
-import { PT_Serif, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
 
-const ptSerif = PT_Serif({
-  variable: "--font-display",
+// Один шрифт на весь интерфейс — иерархия строится весами, а не сменой
+// гарнитуры. Все три CSS-переменные указывают на Inter: это сохраняет
+// совместимость с существующими классами font-display/font-body/font-data
+// в остальных страницах без переписывания каждого компонента.
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin", "cyrillic"],
-  weight: ["400", "700"],
-  display: "swap",
-});
-
-const plexSans = IBM_Plex_Sans({
-  variable: "--font-body",
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "500", "600"],
-  display: "swap",
-});
-
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-data",
-  subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -37,9 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body
-        className={`${ptSerif.variable} ${plexSans.variable} ${plexMono.variable} antialiased`}
-      >
+      <body className={`${inter.variable} antialiased`}>
         <AppShell>{children}</AppShell>
       </body>
     </html>

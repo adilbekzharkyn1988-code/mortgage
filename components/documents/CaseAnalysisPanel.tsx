@@ -13,8 +13,9 @@ import {
 import { DossierAnalysis, RISK_SEVERITY_LABELS } from "@/types/mortgageCase";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { formatDate, formatTenge, splitRecommendation } from "@/lib/format";
+import { formatDate, formatTenge, splitRecommendation, inferRecommendationPriority } from "@/lib/format";
 import { AddToTaskPlanButton } from "@/components/tasks/AddToTaskPlanButton";
+import { GeneratePlanButton } from "@/components/tasks/GeneratePlanButton";
 
 interface CaseAnalysisPanelProps {
   analysis: DossierAnalysis;
@@ -278,21 +279,28 @@ export function CaseAnalysisPanel({ analysis, caseId, onTaskCreated }: CaseAnaly
         {/* РЕКОМЕНДАЦИИ */}
         {analysis.recommendations.length > 0 && (
           <div>
-            <button
-              onClick={() => toggleSection("recommendations")}
-              className="flex w-full items-center justify-between rounded-lg border border-line px-4 py-3 hover:bg-surface-sunken"
-            >
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-line px-4 py-3">
+              <button
+                onClick={() => toggleSection("recommendations")}
+                className="flex flex-1 items-center gap-2 text-left"
+              >
                 <Lightbulb size={16} className="text-navy" />
                 <span className="text-sm font-medium text-ink">РЕКОМЕНДАЦИИ</span>
                 <Badge tone="navy">{analysis.recommendations.length}</Badge>
-              </div>
-              {expandedSections.recommendations ? (
-                <ChevronUp size={16} className="text-ink-soft" />
-              ) : (
-                <ChevronDown size={16} className="text-ink-soft" />
+                {expandedSections.recommendations ? (
+                  <ChevronUp size={16} className="ml-auto text-ink-soft" />
+                ) : (
+                  <ChevronDown size={16} className="ml-auto text-ink-soft" />
+                )}
+              </button>
+              {caseId && (
+                <GeneratePlanButton
+                  caseId={caseId}
+                  recommendations={analysis.recommendations}
+                  onTasksCreated={onTaskCreated}
+                />
               )}
-            </button>
+            </div>
             {expandedSections.recommendations && (
               <div className="mt-2 space-y-3 pl-4">
                 {analysis.recommendations.map((rec, idx) => {
@@ -307,7 +315,7 @@ export function CaseAnalysisPanel({ analysis, caseId, onTaskCreated }: CaseAnaly
                         <div className="pl-5">
                           <AddToTaskPlanButton
                             caseId={caseId}
-                            recommendation={{ title, description, priority: "medium" }}
+                            recommendation={{ title, description, priority: inferRecommendationPriority(rec) }}
                             recommendationId={`rec_${idx}`}
                             onTaskCreated={onTaskCreated}
                           />

@@ -83,3 +83,12 @@ export function splitRecommendation(rec: string): { title: string; description: 
     description: rec.slice(separatorIndex + 2),
   };
 }
+
+// Рекомендации о кредитах-призраках (см. lib/matching.ts —
+// detectStaleClosedLoans) начинаются с этой фразы и заслуживают более
+// высокого приоритета: пока статус в БКИ не обновлён, банк может отказать
+// в ипотеке, ссылаясь на "действующий" кредит, который клиент уже закрыл.
+export function inferRecommendationPriority(rec: string): "high" | "medium" | "low" {
+  if (rec.startsWith("Актуализировать статус кредита")) return "high";
+  return "medium";
+}
