@@ -24,22 +24,44 @@ export interface GeminiCompletionParams {
   file?: GeminiFilePart;
 }
 
-// "gemini-flash-latest" — алиас, а не пришпиленный снапшот конкретной версии.
-// Google сам балансирует запросы между доступными инстансами внутри семейства
-// Flash, поэтому такой алиас меньше подвержен точечным всплескам 503
-// ("high demand") на одной конкретной модели (например, gemini-3.6-flash) и
-// не требует ручного обновления кода при выходе новых версий.
-const DEFAULT_MODEL = "gemini-flash-latest";
+// ВАЖНО: "gemini-flash-latest" — плавающий алиас. На практике он привязан к
+// самой свежей модели семейства Flash (сейчас — gemini-3.8-flash), у которой
+// на бесплатном тарифе очень скромная квота (например, 20 запросов/день) и
+// более высокая цена, чем у Flash-Lite. Поэтому дефолт закреплён на конкретной
+// модели с щедрой бесплатной квотой и низкой ценой ($0.25/$1.50 за 1М токенов
+// на момент написания), а не на алиасе "-latest". Переопределяется через
+// переменную окружения GEMINI_MODEL, если нужно явно указать другую модель.
+const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 
 function getModel(): string {
   return process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
 }
 
-// Ошибки, которые имеет смысл повторить: 503 (модель перегружена/недоступна)
-// и 429 (превышена квота/rate limit) — оба случая транзиентные по своей природе.
+// Ошибки, которые имеет смысл повторить с задержкой:
+// - 503 (модель перегружена/недоступна) — транзиентно по своей природе.
+// - 429 по МИНУТНОЙ квоте (rate limit) — тоже транзиентно, пройдёт в
+//   пределах десятков секунд.
+// 429 по ДНЕВНОЙ квоте (RESOURCE_EXHAUSTED, PerDay) сюда не входит: квота не
+// восстановится в течение секунд, повторные попытки только тратят время
+// впустую и всё равно упрутся в ту же ошибку — см. isDailyQuotaExceeded ниже.
 const RETRYABLE_STATUSES = new Set([429, 503]);
 const MAX_ATTEMPTS = 4; // 1 исходная попытка + 3 повтора
 const BASE_DELAY_MS = 800;
+
+/**
+ * Отличает "дневная квота бесплатного тарифа исчерпана" (ретраить бессмысленно)
+ * от "превышен лимит запросов в минуту" (можно и нужно повторить). Google
+ * кладёт это различие в quota_id/quotaId внутри тела ошибки, например:
+ * "GenerateRequestsPerDayPerProjectPerModel-FreeTier" против
+ * "...PerMinutePerProjectPerModel-FreeTier".
+ */
+function isDailyQuotaExceeded(status: number, detail: string): boolean {
+  if (status !== 429) return false;
+  // Специально смотрим только на "PerDay" в quota_id: тело ошибки может
+  // одновременно перечислять и минутное, и дневное нарушение — если среди
+  // них есть дневное, ждать секунды бессмысленно в любом случае.
+  return /PerDay/i.test(detail);
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -136,13 +158,26 @@ export async function callGemini(params: GeminiCompletionParams): Promise<string
 
     if (response.ok) break;
 
-    let detail = "";
+    let fullDetail = "";
     try {
-      detail = (await response.text()).slice(0, 500);
+      // Читаем ПОЛНОЕ тело: quota_id/quotaId с "PerDay" может оказаться
+      // дальше 500 символов (после links/violations), а он нам нужен целиком
+      // для isDailyQuotaExceeded — усечение делаем только для сообщения юзеру.
+      fullDetail = await response.text();
     } catch {
       // игнорируем — не критично для сообщения об ошибке
     }
+    const detail = fullDetail.slice(0, 500);
     lastErrorDetail = detail;
+
+    if (isDailyQuotaExceeded(response.status, fullDetail)) {
+      throw new Error(
+        "Дневная бесплатная квота Gemini API для этой модели исчерпана. " +
+          "Повторные попытки не помогут — квота обновится на следующие сутки. " +
+          "Подключите оплату в Google AI Studio/Cloud Console или дождитесь сброса квоты. " +
+          `${detail}`
+      );
+    }
 
     const shouldRetry = RETRYABLE_STATUSES.has(response.status) && attempt < MAX_ATTEMPTS;
     if (!shouldRetry) {
