@@ -18,12 +18,31 @@ function creditTitle(item: CreditLineItem): string {
 }
 
 /**
+ * Кредитная линия считается ещё действующей (влияющей на текущую долговую
+ * нагрузку клиента), если она явно не закрыта по статусу И по ней остаётся
+ * непогашенный остаток. Закрытые и полностью погашенные линии сюда не
+ * попадают — иначе "Текущие кредиты" клиента считали бы то же самое, что и
+ * "действующие кредиты" по версии AI (activeCreditsCount/totalMonthlyPayment
+ * в кредитной истории), только с завышенным числом за счёт закрытых
+ * кредитов — из-за этого расхождение "Количество действующих кредитов" и
+ * "Ежемесячные платежи по кредитам" срабатывало практически всегда.
+ */
+function isActiveCreditLine(item: CreditLineItem): boolean {
+  if (statusLooksClosed(item.status)) return false;
+  if (typeof item.remainingBalance === "number" && item.remainingBalance <= 0) return false;
+  return true;
+}
+
+/**
  * Превращает кредитные линии из документа в формат "текущих кредитов" клиента.
+ * Учитываются только действующие кредиты (см. isActiveCreditLine) — закрытые
+ * и погашенные сюда не попадают, чтобы не искажать долговую нагрузку и не
+ * расходиться с "активными" агрегатами, которые уже посчитал AI по документу.
  * Платёж и остаток берутся как есть из документа; если поле не найдено —
  * платёж считается 0 (а не выдумывается), остаток остаётся не указан.
  */
 export function mapCreditsToExistingLoans(credits: CreditLineItem[]): ExistingLoan[] {
-  return credits.map((item) => ({
+  return credits.filter(isActiveCreditLine).map((item) => ({
     id: generateLoanId(),
     title: creditTitle(item),
     monthlyPayment: item.monthlyPayment ?? 0,
@@ -52,7 +71,7 @@ export interface GhostCreditFinding {
   status: string | null;
 }
 
-function statusLooksClosed(status: string | null): boolean {
+export function statusLooksClosed(status: string | null): boolean {
   if (!status) return false;
   const s = status.toLowerCase();
   return s.includes("закры") || s.includes("погаш");

@@ -234,6 +234,13 @@ export function DocumentsSection({
           });
           if (updatedClient) {
             onClientChange?.(updatedClient);
+            // Данные клиента только что синхронизированы с кредитной историей —
+            // расхождения по сумме платежей и количеству кредитов, найденные
+            // чуть выше (до синхронизации), больше не актуальны.
+            await caseService.resolveDiscrepanciesByField(caseId, [
+              "Ежемесячные платежи по кредитам",
+              "Количество действующих кредитов",
+            ]);
             await timelineService.addEvent(
               caseId,
               "client_credits_synced",

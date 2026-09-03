@@ -96,6 +96,21 @@ export const caseService = {
     });
   },
 
+  /**
+   * Убирает из дела расхождения по указанным полям — используется, когда
+   * данные клиента только что синхронизированы с документом (например,
+   * "Текущие кредиты" подтянуты из кредитной истории) и ранее найденное
+   * расхождение по этому полю больше не актуально: оно бы иначе висело в
+   * списке "Обнаруженные несоответствия" даже после автоисправления.
+   */
+  async resolveDiscrepanciesByField(id: string, fields: string[]): Promise<MortgageCase | null> {
+    const current = await adapter.getById(id);
+    if (!current) return null;
+    return this.update(id, {
+      discrepancies: current.discrepancies.filter((d) => !fields.includes(d.field)),
+    });
+  },
+
   async addAnalysis(id: string, analysis: DossierAnalysis): Promise<MortgageCase | null> {
     const current = await adapter.getById(id);
     if (!current) return null;
