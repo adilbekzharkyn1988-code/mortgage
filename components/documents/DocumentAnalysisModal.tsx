@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { TextInput } from "@/components/ui/FormField";
 import { findDiscrepancies } from "@/lib/matching";
+import { classifyCreditLines, isPaidOffButNotClosed } from "@/lib/creditHistory";
 import { fieldLabel, displayFieldValue } from "@/lib/documentFields";
 import { formatTenge } from "@/lib/format";
 
@@ -41,6 +42,11 @@ export function DocumentAnalysisModal({
   // того, чтобы консультант вручную вбивал каждый кредит в карточку клиента,
   // предлагаем сразу заполнить "Текущие кредиты" этими данными.
   const [applyCreditsToClient, setApplyCreditsToClient] = useState(true);
+  // Действующие/погашенные — см. lib/creditHistory.ts:classifyCreditLines.
+  // Разделение по ФАЗЕ обязательства, а не по остатку — карта с фазой
+  // "Действующий" и нулевым остатком всё ещё считается действующей
+  // (и помечается отдельным бейджем "погашен, но не закрыт в бюро").
+  const [creditTab, setCreditTab] = useState<"active" | "closed">("active");
 
   const previewDiscrepancies = useMemo(() => {
     if (!result) return [];
@@ -55,6 +61,12 @@ export function DocumentAnalysisModal({
     const raw = editedFields.credits;
     return Array.isArray(raw) ? (raw as CreditLineItem[]) : [];
   }, [document.type, editedFields]);
+
+  const { active: activeCreditLines, closed: closedCreditLines } = useMemo(
+    () => classifyCreditLines(creditLines),
+    [creditLines]
+  );
+  const visibleCreditLines = creditTab === "active" ? activeCreditLines : closedCreditLines;
 
   if (!result) return null;
 
@@ -172,26 +184,86 @@ export function DocumentAnalysisModal({
                 <Wallet size={13} />
                 Обнаруженные кредиты ({creditLines.length})
               </p>
-              <div className="flex flex-col gap-2">
-                {creditLines.map((line, idx) => (
-                  <div
-                    key={idx}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-sunken px-3.5 py-2.5 text-sm"
-                  >
-                    <span className="font-medium text-ink">
-                      {[line.creditor, line.type].filter(Boolean).join(" — ") || "Кредит"}
-                    </span>
-                    <span className="text-ink-soft">
-                      {line.monthlyPayment !== null ? formatTenge(line.monthlyPayment) : "—"}/мес
-                      {line.remainingBalance !== null &&
-                        ` · остаток ${formatTenge(line.remainingBalance)}`}
-                      {line.overdue && (
-                        <span className="ml-1.5 font-medium text-risk">просрочка</span>
-                      )}
-                    </span>
-                  </div>
-                ))}
+
+              <div className="mb-3 flex gap-1 rounded-lg bg-surface-sunken p-1">
+                <button
+                  type="button"
+                  onClick={() => setCreditTab("active")}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    creditTab === "active"
+                      ? "bg-surface text-ink shadow-sm"
+                      : "text-ink-faint hover:text-ink-soft"
+                  }`}
+                >
+                  Действующие ({activeCreditLines.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreditTab("closed")}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    creditTab === "closed"
+                      ? "bg-surface text-ink shadow-sm"
+                      : "text-ink-faint hover:text-ink-soft"
+                  }`}
+                >
+                  Погашенные ({closedCreditLines.length})
+                </button>
               </div>
+
+              {visibleCreditLines.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-line px-3.5 py-3 text-sm text-ink-faint">
+                  {creditTab === "active"
+                    ? "Действующих кредитов не найдено."
+                    : "Погашенных кредитов не найдено."}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {visibleCreditLines.map((line, idx) => {
+                    const ghost = isPaidOffButNotClosed(line);
+                    return (
+                      <div
+                        key={idx}
+                        className="flex flex-col gap-1.5 rounded-lg border border-line bg-surface-sunken px-3.5 py-2.5 text-sm"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium text-ink">
+                            {[line.creditor, line.type].filter(Boolean).join(" — ") || "Кредит"}
+                          </span>
+                          <span className="text-ink-soft">
+                            {line.monthlyPayment !== null ? formatTenge(line.monthlyPayment) : "—"}/мес
+                            {line.remainingBalance !== null &&
+                              ` · остаток ${formatTenge(line.remainingBalance)}`}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {line.phase && (
+                            <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-ink-faint">
+                              {line.phase}
+                            </span>
+                          )}
+                          {ghost && (
+                            <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">
+                              Погашен, но не закрыт в бюро
+                            </span>
+                          )}
+                          {line.overdue && (
+                            <span className="rounded-full bg-risk-soft px-2 py-0.5 text-[11px] font-medium text-risk">
+                              Есть просрочка сейчас
+                            </span>
+                          )}
+                          {typeof line.overdueDays === "number" && line.overdueDays > 0 && (
+                            <span className="rounded-full bg-risk-soft px-2 py-0.5 text-[11px] font-medium text-risk">
+                              Макс. просрочка: {line.overdueDays}{" "}
+                              {line.overdueDays === 1 ? "день" : "дней"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               <label className="mt-3 flex items-start gap-2.5 rounded-lg border border-navy/15 bg-navy-soft px-3.5 py-2.5 text-sm text-ink">
                 <input
                   type="checkbox"

@@ -6,7 +6,7 @@
  * для анализа. Возвращает структурированный DossierAnalysis.
  */
 
-import { Client } from "@/types/client";
+import { Client, MARITAL_STATUS_LABELS } from "@/types/client";
 import {
   ClientDocument,
   ExtractedFields,
@@ -176,8 +176,13 @@ function buildCaseAnalysisPrompt(caseData: CaseDataForAnalysis): string {
   lines.push("=== ДАННЫЕ КОНСУЛЬТАЦИИ ===");
   lines.push(`Клиент: ${client.fullName}`);
   lines.push(`Дата рождения: ${client.birthDate}`);
+  lines.push(`Семейное положение: ${MARITAL_STATUS_LABELS[client.maritalStatus]}`);
   lines.push(`Доход (консультация): ${client.estimatedIncome.toLocaleString()} ₸`);
-  lines.push(`Доход супруга (консультация): ${client.spouseIncome.toLocaleString()} ₸`);
+  // Доход супруга релевантен только в браке — иначе не указываем его вовсе,
+  // чтобы AI не пытался искать его подтверждение (см. правило в prompts.ts).
+  if (client.maritalStatus === "married") {
+    lines.push(`Доход супруга (консультация): ${client.spouseIncome.toLocaleString()} ₸`);
+  }
   lines.push(`Стоимость недвижимости: ${client.propertyValue.toLocaleString()} ₸`);
   lines.push(`Первоначальный взнос: ${client.downPayment.toLocaleString()} ₸`);
   lines.push(`Необходимая ипотека: ${client.requiredLoanAmount.toLocaleString()} ₸`);

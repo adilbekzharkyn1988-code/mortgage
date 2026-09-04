@@ -18,26 +18,86 @@ function creditTitle(item: CreditLineItem): string {
 }
 
 /**
- * Кредитная линия считается ещё действующей (влияющей на текущую долговую
- * нагрузку клиента), если она явно не закрыта по статусу И по ней остаётся
- * непогашенный остаток. Закрытые и полностью погашенные линии сюда не
- * попадают — иначе "Текущие кредиты" клиента считали бы то же самое, что и
- * "действующие кредиты" по версии AI (activeCreditsCount/totalMonthlyPayment
- * в кредитной истории), только с завышенным числом за счёт закрытых
- * кредитов — из-за этого расхождение "Количество действующих кредитов" и
- * "Ежемесячные платежи по кредитам" срабатывало практически всегда.
+ * Фаза обязательства ("Действующий"/"Завершен" и т.п.) — это ЕДИНСТВЕННЫЙ
+ * надёжный признак того, открыт кредит или закрыт. "status" (см.
+ * paymentStatusLooksClosed ниже) — это платёжный статус договора
+ * ("Стандартные кредиты", "Просроченный") и НЕ говорит о том, закрыт ли
+ * кредит: завершённый кредит вполне может иметь статус "Просроченный".
  */
-function isActiveCreditLine(item: CreditLineItem): boolean {
-  if (statusLooksClosed(item.status)) return false;
-  if (typeof item.remainingBalance === "number" && item.remainingBalance <= 0) return false;
-  return true;
+export function phaseLooksClosed(phase: string | null): boolean {
+  if (!phase) return false;
+  const p = phase.toLowerCase();
+  return p.includes("заверш") || p.includes("закры");
 }
 
 /**
+ * Платёжный статус договора ("Стандартные кредиты", "Просроченный" и т.п.) —
+ * запасной вариант для isActiveCreditLine, когда поля "phase" в документе нет
+ * (старые confirmedFields). НЕ путать с фазой: платёжный статус сам по себе
+ * не говорит, закрыт кредит или нет.
+ */
+function paymentStatusLooksClosed(status: string | null): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s.includes("закры") || s.includes("погаш");
+}
+
+/**
+ * Кредитная линия считается ещё действующей, если её ФАЗА (не платёжный
+ * статус) явно не говорит о завершении. ВАЖНО: остаток задолженности здесь
+ * больше не проверяется — карта/кредит с фазой "Действующий", но нулевым
+ * текущим остатком (например, кредитная карта, которой сейчас не
+ * пользуются), всё равно остаётся действующим обязательством с точки зрения
+ * кредитного бюро. Раньше это приводило к ложному расхождению "Количество
+ * действующих кредитов" (см. lib/matching.ts) — Gemini в activeCreditsCount
+ * считал такие карты, а этот фильтр их отбрасывал из-за нулевого остатка.
+ *
+ * Для документов, проанализированных ДО того, как в промпт добавили поле
+ * "phase" (старые confirmedFields без него), используем платёжный статус как
+ * запасной вариант — это лучше, чем считать все такие кредиты активными.
+ */
+function isActiveCreditLine(item: CreditLineItem): boolean {
+  if (item.phase) return !phaseLooksClosed(item.phase);
+  return !paymentStatusLooksClosed(item.status);
+}
+
+/** Кредит "погашен, но не закрыт в бюро": фаза говорит "действующий", но
+ *  остаток задолженности уже нулевой — то же, что и detectGhostCredits ниже,
+ *  но как булева проверка одной линии (используется в UI для бейджа). */
+function isPaidOffButNotClosed(item: CreditLineItem): boolean {
+  return (
+    isActiveCreditLine(item) &&
+    typeof item.remainingBalance === "number" &&
+    item.remainingBalance <= 0
+  );
+}
+
+/**
+ * Раскладывает кредитные линии на три группы для UI (см.
+ * DocumentAnalysisModal): действующие (в т.ч. "кредиты-призраки" — погашенные
+ * по факту, но не закрытые в бюро) и завершённые.
+ */
+export function classifyCreditLines(credits: CreditLineItem[]): {
+  active: CreditLineItem[];
+  closed: CreditLineItem[];
+} {
+  const active: CreditLineItem[] = [];
+  const closed: CreditLineItem[] = [];
+  for (const item of credits) {
+    (isActiveCreditLine(item) ? active : closed).push(item);
+  }
+  return { active, closed };
+}
+
+export { isActiveCreditLine, isPaidOffButNotClosed };
+
+/**
  * Превращает кредитные линии из документа в формат "текущих кредитов" клиента.
- * Учитываются только действующие кредиты (см. isActiveCreditLine) — закрытые
- * и погашенные сюда не попадают, чтобы не искажать долговую нагрузку и не
- * расходиться с "активными" агрегатами, которые уже посчитал AI по документу.
+ * Учитываются только кредиты с фазой "действующий" (см. isActiveCreditLine) —
+ * завершённые сюда не попадают. "Кредиты-призраки" (действующие по фазе, но
+ * с нулевым остатком — см. detectGhostCredits) НАМЕРЕННО включаются: бюро
+ * всё ещё считает их открытыми обязательствами, и именно поэтому по ним
+ * заводится отдельная задача на закрытие в ПКБ, а не молчаливое исключение.
  * Платёж и остаток берутся как есть из документа; если поле не найдено —
  * платёж считается 0 (а не выдумывается), остаток остаётся не указан.
  */
@@ -71,32 +131,25 @@ export interface GhostCreditFinding {
   status: string | null;
 }
 
-export function statusLooksClosed(status: string | null): boolean {
-  if (!status) return false;
-  const s = status.toLowerCase();
-  return s.includes("закры") || s.includes("погаш");
-}
-
 /**
- * Находит кредитные линии, где остаток задолженности равен 0, но статус в
- * отчёте не говорит явно "закрыт"/"погашен" — то есть кредит формально всё
- * ещё числится действующим. По каждой такой линии консультанту нужно
- * поручить клиенту подать заявление в ПКБ на закрытие кредита.
+ * Находит кредитные линии, где остаток задолженности равен 0, но ФАЗА
+ * обязательства не говорит о завершении — то есть кредит формально всё ещё
+ * числится действующим. По каждой такой линии консультанту нужно поручить
+ * клиенту подать заявление в ПКБ на закрытие кредита.
+ *
+ * ВАЖНО: раньше здесь проверялся платёжный статус ("Стандартные кредиты" /
+ * "Просроченный"), а не фаза — из-за этого под "кредит-призрак" ошибочно
+ * попадали и обычные ЗАВЕРШЁННЫЕ кредиты с нулевым остатком (что для
+ * завершённых кредитов совершенно нормально), потому что платёжный статус
+ * никогда явно не пишет "закрыт"/"погашен".
  */
 export function detectGhostCredits(credits: CreditLineItem[]): GhostCreditFinding[] {
-  return credits
-    .filter(
-      (item) =>
-        typeof item.remainingBalance === "number" &&
-        item.remainingBalance <= 0 &&
-        !statusLooksClosed(item.status)
-    )
-    .map((item) => ({
-      creditor: item.creditor || "Кредитор не указан",
-      type: item.type,
-      monthlyPayment: item.monthlyPayment,
-      status: item.status,
-    }));
+  return credits.filter(isPaidOffButNotClosed).map((item) => ({
+    creditor: item.creditor || "Кредитор не указан",
+    type: item.type,
+    monthlyPayment: item.monthlyPayment,
+    status: item.status,
+  }));
 }
 
 /** Заголовок/описание задачи для консультанта по одному найденному "кредиту-призраку". */
